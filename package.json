@@ -1,0 +1,25 @@
+{
+  "name": "cloulang",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "clou": "./bin/index.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.1",
+    "@types/bun": "latest",
+    "@types/node": "^22.15.3",
+    "knip": "^5.51.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.31.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "scripts": {
+    "knip": "knip",
+    "lint": "eslint .",
+    "test": "bun test"
+  }
+}
