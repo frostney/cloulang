@@ -1,6 +1,7 @@
 import type { Interpreter } from "./interpreter";
 import type { Token } from "./token-types";
 import type * as AST from "./ast-nodes";
+import { HiddenClass } from "./hidden-class";
 
 export type ValueType =
   | number
@@ -219,29 +220,72 @@ export class ClouClass {
 
 // Instance of a class
 export class ClouInstance {
-  private fields = new Map<string, ValueType>();
+  private hiddenClass: HiddenClass;
+  private properties: ValueType[];
+  private propertyCache: Map<string, number>;
 
-  constructor(public klass: ClouClass) {}
+  constructor(public klass: ClouClass) {
+    this.hiddenClass = new HiddenClass();
+    this.properties = [];
+    this.propertyCache = new Map();
+  }
 
   get(name: Token): ValueType {
-    const fieldValue = this.fields.get(name.lexeme);
-    if (fieldValue !== undefined) {
-      return fieldValue;
+    const propertyName = name.lexeme;
+
+    // Check property cache first
+    const cachedIndex = this.propertyCache.get(propertyName);
+    if (cachedIndex !== undefined) {
+      return this.properties[cachedIndex] ?? null;
     }
 
-    const method = this.klass.findMethod(name.lexeme);
+    // Check hidden class for property index
+    const index = this.hiddenClass.getPropertyIndex(propertyName);
+    if (index !== undefined) {
+      // Cache the index for future lookups
+      this.propertyCache.set(propertyName, index);
+      return this.properties[index] ?? null;
+    }
+
+    // Check for methods
+    const method = this.klass.findMethod(propertyName);
     if (method) {
       return method.bind(this);
     }
 
     throw new RuntimeError(
-      `Undefined property '${name.lexeme}' in ${this.klass.name}.`
+      `Undefined property '${propertyName}' in ${this.klass.name}.`
     );
   }
 
   set(name: Token | string, value: ValueType): void {
     const propertyName = typeof name === "string" ? name : name.lexeme;
-    this.fields.set(propertyName, value);
+
+    // Check property cache first
+    const cachedIndex = this.propertyCache.get(propertyName);
+    if (cachedIndex !== undefined) {
+      this.properties[cachedIndex] = value;
+      return;
+    }
+
+    // Check hidden class for property index
+    const index = this.hiddenClass.getPropertyIndex(propertyName);
+    if (index !== undefined) {
+      this.properties[index] = value;
+      // Cache the index for future lookups
+      this.propertyCache.set(propertyName, index);
+      return;
+    }
+
+    // New property - transition to new hidden class
+    this.hiddenClass = this.hiddenClass.addProperty(propertyName);
+    const newIndex = this.hiddenClass.getPropertyIndex(propertyName);
+    if (newIndex === undefined) {
+      throw new RuntimeError(`Failed to add property '${propertyName}'`);
+    }
+    this.properties[newIndex] = value;
+    // Cache the index for future lookups
+    this.propertyCache.set(propertyName, newIndex);
   }
 
   toString(): string {

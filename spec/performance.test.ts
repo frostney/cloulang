@@ -147,19 +147,54 @@ describe("Performance Tests", () => {
 
   test("large object operations", () => {
     const code = `
+      // Pre-allocate object with numeric keys
       let obj = {};
-      for (let i = 0; i < 1000000; i = i + 1) {
-        obj["key" + i] = i;
+      let size = 1000000;
+      
+      // Fill object with numeric keys
+      for (let i = 0; i < size; i = i + 1) {
+        obj[i] = i;  // Use numeric keys directly
       }
+      
       let sum = 0;
-      for (let i = 0; i < 1000000; i = i + 1) {
-        sum = sum + obj["key" + i];
+      // Sum using numeric keys
+      for (let i = 0; i < size; i = i + 1) {
+        sum = sum + obj[i];
       }
       print("Object sum:", sum);
     `;
     const executionTime = measureExecutionTime(code);
     console.log(
       `Large object operations execution time: ${executionTime.toFixed(2)}ms`
+    );
+    expect(executionTime).toBeLessThan(2000); // Should execute in less than 2 seconds
+  });
+
+  // Add a new test for string key operations to compare
+  test("large object operations with string keys", () => {
+    const code = `
+      // Pre-allocate object and cache key prefix
+      let obj = {};
+      let size = 1000000;
+      let keyPrefix = "key";
+      
+      // Fill object with string keys
+      for (let i = 0; i < size; i = i + 1) {
+        obj[keyPrefix + i] = i;
+      }
+      
+      let sum = 0;
+      // Sum using string keys
+      for (let i = 0; i < size; i = i + 1) {
+        sum = sum + obj[keyPrefix + i];
+      }
+      print("Object sum with string keys:", sum);
+    `;
+    const executionTime = measureExecutionTime(code);
+    console.log(
+      `Large object operations with string keys execution time: ${executionTime.toFixed(
+        2
+      )}ms`
     );
     expect(executionTime).toBeLessThan(2000); // Should execute in less than 2 seconds
   });
