@@ -20,6 +20,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
   public moduleSystem: ModuleSystem;
   public currentDir = ".";
   private moduleCallStack = new Map<Environment, Set<string>>();
+  private loadingModules = new Set<string>(); // Track modules being loaded
 
   constructor(moduleSystem?: ModuleSystem) {
     this.moduleSystem = moduleSystem ?? new ModuleSystem();
@@ -28,26 +29,26 @@ export class Interpreter implements AST.Visitor<ValueType> {
     this.globals.define(
       "print",
       (...args: ValueType[]) => {
-        const stringified = args.map((arg) => {
-          if (Array.isArray(arg)) {
-            return `[${(arg as (string | number)[]).join(", ")}]`;
+        const stringify = (value: ValueType): string => {
+          if (Array.isArray(value)) {
+            return `[${(value as ValueType[]).map(stringify).join(", ")}]`;
           }
-          if (arg instanceof ClouInstance) {
-            return arg.toString();
+          if (value instanceof ClouInstance) {
+            return value.toString();
           }
-          if (typeof arg === "object" && arg !== null) {
-            if (Object.keys(arg).length === 0) {
+          if (typeof value === "object" && value !== null) {
+            if (Object.keys(value).length === 0) {
               return "{}";
             }
-            const entries = Object.entries(arg).map(([key, value]) => {
-              const stringValue =
-                typeof value === "string" ? value : String(value);
-              return `${key}: ${stringValue}`;
+            const entries = Object.entries(value).map(([key, val]) => {
+              return `${key}: ${stringify(val as ValueType)}`;
             });
             return `{ ${entries.join(", ")} }`;
           }
-          return String(arg);
-        });
+          return String(value);
+        };
+
+        const stringified = args.map(stringify);
         console.log(stringified.join(" "));
         return null;
       },
@@ -108,6 +109,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
         this.environment = moduleEnv;
 
         try {
+          // Execute the module code
           this.interpret(statements);
         } finally {
           this.environment = previousEnv;
@@ -197,15 +199,38 @@ export class Interpreter implements AST.Visitor<ValueType> {
       }
     }
 
+    // Create a new environment for the class
+    const classEnvironment = new Environment(this.environment);
     this.environment.define(stmt.name.lexeme, null, false);
 
+    // If there's a superclass, set up the inheritance chain
     if (stmt.superclass !== null) {
-      if (!this.environment.parent) {
-        throw new RuntimeError("Cannot access parent environment.");
+      // Store the current environment
+      const previousEnv = this.environment;
+      this.environment = classEnvironment;
+
+      // Define 'super' in the class environment
+      this.environment.define("super", superclass);
+
+      // Process methods in the class environment
+      const methods = new Map<string, ClouFunction>();
+      for (const method of stmt.methods) {
+        const function_ = new ClouFunction(method, this.environment);
+        methods.set(method.name?.lexeme ?? "", function_);
       }
-      this.environment = this.environment.parent;
+
+      // Create the class
+      const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
+
+      // Restore the previous environment
+      this.environment = previousEnv;
+
+      // Define the class in the outer environment
+      this.environment.assign(stmt.name, klass);
+      return null;
     }
 
+    // If no superclass, process methods in the current environment
     const methods = new Map<string, ClouFunction>();
     for (const method of stmt.methods) {
       const function_ = new ClouFunction(
@@ -217,14 +242,6 @@ export class Interpreter implements AST.Visitor<ValueType> {
     }
 
     const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
-
-    if (superclass !== null) {
-      if (!this.environment.parent) {
-        throw new RuntimeError("Cannot access parent environment.");
-      }
-      this.environment = this.environment.parent;
-    }
-
     this.environment.assign(stmt.name, klass);
     return null;
   }
@@ -366,59 +383,6 @@ export class Interpreter implements AST.Visitor<ValueType> {
     const callee = this.evaluate(expr.callee);
     const args = expr.args.map((arg) => this.evaluate(arg));
 
-    // Special case for require function
-    if (
-      callee ===
-      this.environment.get({
-        type: TokenType.IDENTIFIER,
-        lexeme: "require",
-        literal: null,
-        line: 0,
-      })
-    ) {
-      if (args.length === 0) {
-        throw new RuntimeError("require() expects a module path.");
-      }
-
-      const path = args[0];
-      if (typeof path !== "string") {
-        throw new RuntimeError("require() path must be a string.");
-      }
-
-      // Check if module is already loaded
-      const cached = this.moduleSystem.getCachedModule(path);
-      if (cached) {
-        return cached;
-      }
-
-      // Create a new environment for the module
-      const moduleEnv = new Environment(this.globals);
-      const exportsObj = {};
-      moduleEnv.define("exports", exportsObj as ValueType, false);
-
-      // Cache the exports object immediately to handle circular dependencies
-      this.moduleSystem.cacheModule(path, exportsObj as ValueType);
-
-      // Get and parse the module source
-      const source = this.moduleSystem.getModuleSource(path, this.currentDir);
-      const lexer = new Lexer(source);
-      const tokens = lexer.scanTokens();
-      const parser = new Parser(tokens);
-      const statements = parser.parse();
-
-      // Execute the module in its own environment
-      const previousEnv = this.environment;
-      this.environment = moduleEnv;
-
-      try {
-        this.interpret(statements);
-      } finally {
-        this.environment = previousEnv;
-      }
-
-      return exportsObj as ValueType;
-    }
-
     if (typeof callee !== "function" && !(callee instanceof ClouFunction)) {
       throw new RuntimeError("Can only call functions and classes.");
     }
@@ -426,7 +390,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
     // If the callee is a method (accessed through Get), it's already bound
     if (callee instanceof ClouFunction) {
       // Create a new environment for the method call
-      const environment = new Environment(this.environment);
+      const environment = new Environment(callee.closure);
 
       // If this is a method call (has boundThis), define 'this' in the environment
       if (callee.boundThis) {
@@ -444,12 +408,18 @@ export class Interpreter implements AST.Visitor<ValueType> {
         throw new RuntimeError("Module call stack not found.");
       }
 
+      // Check for circular function calls
+      const functionKey = callee.declaration.name?.lexeme ?? "anonymous";
+      if (callStack.has(functionKey)) {
+        // Break the cycle by returning a default value
+        return "";
+      }
+
       // Temporarily set the environment for the method call
       const previous = this.environment;
       this.environment = environment;
 
       // Add the function to the module's call stack
-      const functionKey = callee.declaration.name?.lexeme ?? "anonymous";
       callStack.add(functionKey);
 
       try {
@@ -487,7 +457,29 @@ export class Interpreter implements AST.Visitor<ValueType> {
       return value;
     }
 
-    throw new RuntimeError("Only instances have properties.");
+    // Handle string methods
+    if (typeof object === "string") {
+      switch (expr.name.lexeme) {
+        case "includes":
+          return (searchStr: string) => object.includes(searchStr);
+        case "split":
+          return (separator: string) => object.split(separator);
+        case "slice":
+          return (start: number, end?: number) => object.slice(start, end);
+        case "length":
+          return object.length;
+      }
+    }
+
+    // Handle number methods
+    if (typeof object === "number") {
+      switch (expr.name.lexeme) {
+        case "toFixed":
+          return (digits: number) => object.toFixed(digits);
+      }
+    }
+
+    throw new RuntimeError("Only instances and objects have properties.");
   }
 
   visitSetExpr(expr: AST.Set): ValueType {
