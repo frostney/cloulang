@@ -244,9 +244,23 @@ describe("Integration Tests", () => {
         function perimeter() {
           return 0;
         }
+
+        function formatNumber(n) {
+          let str = "" + n;
+          if (str.includes(".")) {
+            let parts = str.split(".");
+            let whole = parts[0];
+            let decimal = parts[1];
+            if (decimal.length > 5) {
+              decimal = decimal.slice(0, 5);
+            }
+            return whole + "." + decimal;
+          }
+          return str;
+        }
         
         function describe() {
-          return "A shape with area " + this.area() + " and perimeter " + this.perimeter();
+          return "A shape with area " + this.formatNumber(this.area()) + " and perimeter " + this.formatNumber(this.perimeter());
         }
       }
       
