@@ -1,5 +1,6 @@
 import { TokenType } from "./token-types";
 import type { Token, TokenLiteral } from "./token-types";
+import { StringIntern } from "./string-intern";
 
 export class Lexer {
   private source: string;
@@ -31,8 +32,11 @@ export class Lexer {
     not: TokenType.NOT,
   };
 
+  private stringIntern: StringIntern;
+
   constructor(source: string) {
     this.source = source;
+    this.stringIntern = StringIntern.getInstance();
   }
 
   scanTokens(): Token[] {
@@ -193,8 +197,10 @@ export class Lexer {
     // Consume the closing quote
     this.advance();
 
-    // Extract the string value (without the quotes)
-    const value = this.source.substring(this.start + 1, this.current - 1);
+    // Extract the string value (without the quotes) and intern it
+    const value = this.stringIntern.intern(
+      this.source.substring(this.start + 1, this.current - 1)
+    );
     this.addToken(TokenType.STRING, value);
   }
 
@@ -223,7 +229,9 @@ export class Lexer {
       this.advance();
     }
 
-    const text = this.source.substring(this.start, this.current);
+    const text = this.stringIntern.intern(
+      this.source.substring(this.start, this.current)
+    );
     let type = Lexer.keywords[text];
     type ??= TokenType.IDENTIFIER;
 

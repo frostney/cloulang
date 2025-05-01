@@ -163,4 +163,47 @@ describe("Performance Tests", () => {
     );
     expect(executionTime).toBeLessThan(2000); // Should execute in less than 2 seconds
   });
+
+  test("string interning", () => {
+    const source = `
+      let str1 = "hello";
+      let str2 = "hello";
+      let str3 = "world";
+      let str4 = "world";
+      let str5 = "hello";
+      let str6 = "world";
+      let str7 = "hello";
+      let str8 = "world";
+      let str9 = "hello";
+      let str10 = "world";
+    `;
+
+    const start = performance.now();
+    const result = runClouCode(source);
+    const end = performance.now();
+    console.log(
+      `String interning execution time: ${(end - start).toFixed(2)}ms`
+    );
+
+    // Verify that identical strings are interned
+    for (let i = 0; i < result.length; i++) {
+      if (typeof result[i] !== "string") {
+        throw new Error(
+          `Expected string at index ${i}, got ${typeof result[i]}`
+        );
+      }
+    }
+
+    const [str1, str2, str3, str4, str5, str6, str7, str8, str9, str10] =
+      result as string[];
+
+    expect(str1).toBe(str2); // str1 and str2
+    expect(str3).toBe(str4); // str3 and str4
+    expect(str1).toBe(str5); // str1 and str5
+    expect(str3).toBe(str6); // str3 and str6
+    expect(str1).toBe(str7); // str1 and str7
+    expect(str3).toBe(str8); // str3 and str8
+    expect(str1).toBe(str9); // str1 and str9
+    expect(str3).toBe(str10); // str3 and str10
+  });
 });
