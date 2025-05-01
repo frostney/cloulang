@@ -411,9 +411,10 @@ export class Parser {
         );
         expr = new AST.Get(expr, name);
       } else if (this.previous().type === TokenType.LEFT_BRACKET) {
+        const bracket = this.previous();
         const index = this.expression();
         this.consume(TokenType.RIGHT_BRACKET, "Expect ']' after index.");
-        expr = new AST.Index(expr, index);
+        expr = new AST.Index(expr, index, bracket);
       }
     }
 

@@ -14,9 +14,108 @@ export type ValueType =
   | ValueType[];
 
 export class RuntimeError extends Error {
-  constructor(message: string) {
+  constructor(message: string, public token?: Token, public source?: string) {
     super(message);
     this.name = "RuntimeError";
+
+    if (token && source) {
+      const lines = source.split("\n");
+      const lineNumber = token.line;
+      const startLine = Math.max(1, lineNumber - 2);
+      const endLine = Math.min(lines.length, lineNumber + 2);
+
+      let context = "";
+      for (let i = startLine; i <= endLine; i++) {
+        const line = lines[i - 1] ?? "";
+        const prefix = i === lineNumber ? ">" : " ";
+        context += `${prefix} ${i.toString().padStart(3)} | ${line}\n`;
+        if (i === lineNumber) {
+          const column =
+            token.lexeme.length > 0
+              ? line.indexOf(token.lexeme) + 1
+              : line.length;
+          context +=
+            "    " +
+            " ".repeat(column + 5) +
+            "^".repeat(token.lexeme.length || 1) +
+            "\n";
+        }
+      }
+
+      // Add suggestions based on error type
+      let suggestion = "";
+      if (message.includes("Undefined variable")) {
+        suggestion =
+          "\nSuggestion: Declare the variable before using it, e.g.:\n" +
+          "  let " +
+          token.lexeme +
+          " = <value>;";
+      } else if (message.includes("Cannot reassign const variable")) {
+        suggestion =
+          "\nSuggestion: Use `let` instead of `const` if you need to reassign the variable, e.g.:\n" +
+          "  let " +
+          token.lexeme +
+          " = <value>;";
+      } else if (message.includes("Division by zero")) {
+        suggestion =
+          "\nSuggestion: Add a check before division, e.g.:\n" +
+          "  if (y !== 0) {\n" +
+          "    let z = x / y;\n" +
+          "  }";
+      } else if (message.includes("Array index out of bounds")) {
+        suggestion =
+          "\nSuggestion: Check array length before accessing, e.g.:\n" +
+          "  if (index >= 0 && index < array.length) {\n" +
+          "    let value = array[index];\n" +
+          "  }";
+      } else if (message.includes("String index out of bounds")) {
+        suggestion =
+          "\nSuggestion: Check string length before accessing, e.g.:\n" +
+          "  if (index >= 0 && index < str.length) {\n" +
+          "    let char = str[index];\n" +
+          "  }";
+      } else if (message.includes("Operands must be numbers")) {
+        suggestion =
+          "\nSuggestion: Convert operands to numbers if needed, e.g.:\n" +
+          "  let result = Number(x) + Number(y);";
+      } else if (message.includes("Operands must be numbers or strings")) {
+        suggestion =
+          "\nSuggestion: Ensure both operands are either numbers or strings, e.g.:\n" +
+          "  let result = String(x) + String(y);";
+      } else if (message.includes("Can only call functions and classes")) {
+        suggestion =
+          "\nSuggestion: Make sure the value is a function or class before calling, e.g.:\n" +
+          '  if (typeof value === "function") {\n' +
+          "    value();\n" +
+          "  }";
+      } else if (message.includes("is not a class")) {
+        suggestion =
+          "\nSuggestion: Make sure the value is a class before instantiating, e.g.:\n" +
+          "  if (value instanceof ClouClass) {\n" +
+          "    new value();\n" +
+          "  }";
+      } else if (message.includes("Invalid super call")) {
+        suggestion =
+          "\nSuggestion: super can only be used in a subclass constructor, e.g.:\n" +
+          "  class SubClass extends SuperClass {\n" +
+          "    function init() {\n" +
+          "      super.init();\n" +
+          "    }\n" +
+          "  }";
+      } else if (
+        message.includes("Only instances and objects have properties")
+      ) {
+        suggestion =
+          "\nSuggestion: Make sure the value is an object before accessing properties, e.g.:\n" +
+          '  if (typeof value === "object" && value !== null) {\n' +
+          "    value.property;\n" +
+          "  }";
+      }
+
+      this.message = `Runtime Error: ${message}\n\n${context}${suggestion}`;
+    } else {
+      this.message = `Runtime Error: ${message}`;
+    }
   }
 }
 
@@ -177,7 +276,7 @@ export class Environment {
       return this.parent.get(name);
     }
 
-    throw new RuntimeError(`Undefined variable '${name.lexeme}'.`);
+    throw new RuntimeError(`Undefined variable '${name.lexeme}'.`, name);
   }
 
   assign(name: Token, value: ValueType): void {
@@ -185,7 +284,8 @@ export class Environment {
     if (variable) {
       if (variable.isConst) {
         throw new RuntimeError(
-          `Cannot reassign const variable '${name.lexeme}'.`
+          `Cannot reassign const variable '${name.lexeme}'.`,
+          name
         );
       }
       variable.value = value;
@@ -197,6 +297,6 @@ export class Environment {
       return;
     }
 
-    throw new RuntimeError(`Undefined variable '${name.lexeme}'.`);
+    throw new RuntimeError(`Undefined variable '${name.lexeme}'.`, name);
   }
 }

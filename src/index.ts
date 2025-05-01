@@ -50,7 +50,7 @@ export class Clou {
       throw new Error("Execution failed due to errors.");
     }
 
-    return this.interpreter.interpret(statements);
+    return this.interpreter.interpret(statements, source);
   }
 
   // Error handling methods

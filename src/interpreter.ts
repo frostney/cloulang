@@ -21,6 +21,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
   public currentDir = ".";
   private moduleCallStack = new Map<Environment, Set<string>>();
   private loadingModules = new Set<string>(); // Track modules being loaded
+  private currentSource = ""; // Track current source code
 
   constructor(moduleSystem?: ModuleSystem) {
     this.moduleSystem = moduleSystem ?? new ModuleSystem();
@@ -110,7 +111,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
 
         try {
           // Execute the module code
-          this.interpret(statements);
+          this.interpret(statements, source);
         } finally {
           this.environment = previousEnv;
         }
@@ -121,7 +122,8 @@ export class Interpreter implements AST.Visitor<ValueType> {
     );
   }
 
-  interpret(statements: AST.Stmt[]): ValueType[] {
+  interpret(statements: AST.Stmt[], source = ""): ValueType[] {
+    this.currentSource = source;
     const results: ValueType[] = [];
     for (const statement of statements) {
       results.push(this.execute(statement));
@@ -294,7 +296,11 @@ export class Interpreter implements AST.Visitor<ValueType> {
         if (typeof left === "string" || typeof right === "string") {
           return String(left as string) + String(right as string);
         }
-        throw new RuntimeError("Operands must be numbers or strings.");
+        throw new RuntimeError(
+          "Operands must be numbers or strings.",
+          expr.operator,
+          this.currentSource
+        );
       case TokenType.MINUS:
         this.checkNumberOperands(expr.operator, left, right);
         return (left as number) - (right as number);
@@ -304,13 +310,21 @@ export class Interpreter implements AST.Visitor<ValueType> {
       case TokenType.DIVIDE:
         this.checkNumberOperands(expr.operator, left, right);
         if (right === 0) {
-          throw new RuntimeError("Division by zero.");
+          throw new RuntimeError(
+            "Division by zero.",
+            expr.operator,
+            this.currentSource
+          );
         }
         return (left as number) / (right as number);
       case TokenType.MODULO:
         this.checkNumberOperands(expr.operator, left, right);
         if (right === 0) {
-          throw new RuntimeError("Modulo by zero.");
+          throw new RuntimeError(
+            "Modulo by zero.",
+            expr.operator,
+            this.currentSource
+          );
         }
         return (left as number) % (right as number);
       case TokenType.POWER:
@@ -386,7 +400,11 @@ export class Interpreter implements AST.Visitor<ValueType> {
     const args = expr.args.map((arg) => this.evaluate(arg));
 
     if (typeof callee !== "function" && !(callee instanceof ClouFunction)) {
-      throw new RuntimeError("Can only call functions and classes.");
+      throw new RuntimeError(
+        "Can only call functions and classes.",
+        expr.paren,
+        this.currentSource
+      );
     }
 
     // If the callee is a method (accessed through Get), it's already bound
@@ -482,7 +500,11 @@ export class Interpreter implements AST.Visitor<ValueType> {
       }
     }
 
-    throw new RuntimeError("Only instances and objects have properties.");
+    throw new RuntimeError(
+      "Only instances and objects have properties.",
+      expr.name,
+      this.currentSource
+    );
   }
 
   visitSetExpr(expr: AST.Set): ValueType {
@@ -492,7 +514,11 @@ export class Interpreter implements AST.Visitor<ValueType> {
       !(object instanceof ClouInstance) &&
       !(typeof object === "object" && object !== null)
     ) {
-      throw new RuntimeError("Only instances and objects have fields.");
+      throw new RuntimeError(
+        "Only instances and objects have fields.",
+        expr.name,
+        this.currentSource
+      );
     }
 
     const value = this.evaluate(expr.value);
@@ -519,7 +545,11 @@ export class Interpreter implements AST.Visitor<ValueType> {
         lexeme: "this",
       } as Token) as ClouInstance;
     } catch {
-      throw new RuntimeError("Invalid super call");
+      throw new RuntimeError(
+        "Invalid super call",
+        expr.keyword,
+        this.currentSource
+      );
     }
 
     // Get the class from the instance
@@ -532,14 +562,20 @@ export class Interpreter implements AST.Visitor<ValueType> {
         lexeme: "super",
       } as Token) as ClouClass;
     } catch {
-      throw new RuntimeError("Invalid super call");
+      throw new RuntimeError(
+        "Invalid super call",
+        expr.keyword,
+        this.currentSource
+      );
     }
 
     // Find the method in the superclass chain
     const method = superclass.findMethod(expr.method.lexeme);
     if (!method) {
       throw new RuntimeError(
-        `Undefined method property '${expr.method.lexeme}' in ${klass.name}.`
+        `Undefined method property '${expr.method.lexeme}' in ${klass.name}.`,
+        expr.method,
+        this.currentSource
       );
     }
 
@@ -551,7 +587,11 @@ export class Interpreter implements AST.Visitor<ValueType> {
     const classValue = this.environment.get({ lexeme: className } as Token);
 
     if (!(classValue instanceof ClouClass)) {
-      throw new RuntimeError(`${className} is not a class.`);
+      throw new RuntimeError(
+        `${className} is not a class.`,
+        expr.className,
+        this.currentSource
+      );
     }
 
     const instance = new ClouInstance(classValue);
@@ -597,11 +637,19 @@ export class Interpreter implements AST.Visitor<ValueType> {
         index < 0 ||
         index >= object.length
       ) {
-        throw new RuntimeError("Array index out of bounds.");
+        throw new RuntimeError(
+          "Array index out of bounds.",
+          expr.bracket,
+          this.currentSource
+        );
       }
       const value = object[index];
       if (value === undefined) {
-        throw new RuntimeError("Array index out of bounds.");
+        throw new RuntimeError(
+          "Array index out of bounds.",
+          expr.bracket,
+          this.currentSource
+        );
       }
       return value;
     }
@@ -613,11 +661,19 @@ export class Interpreter implements AST.Visitor<ValueType> {
         index < 0 ||
         index >= object.length
       ) {
-        throw new RuntimeError("String index out of bounds.");
+        throw new RuntimeError(
+          "String index out of bounds.",
+          expr.bracket,
+          this.currentSource
+        );
       }
       const char = object[index];
       if (char === undefined) {
-        throw new RuntimeError("String index out of bounds.");
+        throw new RuntimeError(
+          "String index out of bounds.",
+          expr.bracket,
+          this.currentSource
+        );
       }
       return char;
     }
@@ -629,7 +685,9 @@ export class Interpreter implements AST.Visitor<ValueType> {
         object instanceof ClouFunction
       ) {
         throw new RuntimeError(
-          "Cannot index into class, function, or instance directly."
+          "Cannot index into class, function, or instance directly.",
+          expr.bracket,
+          this.currentSource
         );
       }
       // Type guard for plain objects
@@ -641,14 +699,26 @@ export class Interpreter implements AST.Visitor<ValueType> {
             : String(index as unknown as string | number);
         const value = obj[key];
         if (value === undefined) {
-          throw new RuntimeError("Object property not found.");
+          throw new RuntimeError(
+            "Object property not found.",
+            expr.bracket,
+            this.currentSource
+          );
         }
         return value;
       }
-      throw new RuntimeError("Only plain objects are indexable.");
+      throw new RuntimeError(
+        "Only plain objects are indexable.",
+        expr.bracket,
+        this.currentSource
+      );
     }
 
-    throw new RuntimeError("Only arrays, strings, and objects are indexable.");
+    throw new RuntimeError(
+      "Only arrays, strings, and objects are indexable.",
+      expr.bracket,
+      this.currentSource
+    );
   }
 
   visitIndexAssignExpr(expr: AST.IndexAssign): ValueType {
@@ -737,7 +807,11 @@ export class Interpreter implements AST.Visitor<ValueType> {
       return;
     }
 
-    throw new RuntimeError("Operand must be a number.");
+    throw new RuntimeError(
+      "Operand must be a number.",
+      operator,
+      this.currentSource
+    );
   }
 
   checkNumberOperands(
@@ -748,6 +822,10 @@ export class Interpreter implements AST.Visitor<ValueType> {
     if (typeof left === "number" && typeof right === "number") {
       return;
     }
-    throw new RuntimeError("Operands must be numbers.");
+    throw new RuntimeError(
+      "Operands must be numbers.",
+      operator,
+      this.currentSource
+    );
   }
 }

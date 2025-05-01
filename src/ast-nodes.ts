@@ -162,7 +162,7 @@ export class Object implements Node {
 }
 
 export class Index implements Node {
-  constructor(public object: Expr, public index: Expr) {}
+  constructor(public object: Expr, public index: Expr, public bracket: Token) {}
 
   accept<R>(visitor: Visitor<R>): R {
     return visitor.visitIndexExpr(this);
