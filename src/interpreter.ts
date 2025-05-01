@@ -227,6 +227,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
 
       // Define the class in the outer environment
       this.environment.assign(stmt.name, klass);
+
       return null;
     }
 
@@ -243,6 +244,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
 
     const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
     this.environment.assign(stmt.name, klass);
+
     return null;
   }
 
@@ -510,7 +512,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
   }
 
   visitSuperExpr(expr: AST.Super): ValueType {
-    // Check if we're in a class context by looking for 'this'
+    // First check if we're in a class context by looking for 'this'
     let instance: ClouInstance;
     try {
       instance = this.environment.get({
@@ -522,11 +524,19 @@ export class Interpreter implements AST.Visitor<ValueType> {
 
     // Get the class from the instance
     const klass = instance.klass;
-    if (!klass.superclass) {
+
+    // Get the superclass from the environment
+    let superclass: ClouClass;
+    try {
+      superclass = this.environment.get({
+        lexeme: "super",
+      } as Token) as ClouClass;
+    } catch {
       throw new RuntimeError("Invalid super call");
     }
 
-    const method = klass.superclass.findMethod(expr.method.lexeme);
+    // Find the method in the superclass chain
+    const method = superclass.findMethod(expr.method.lexeme);
     if (!method) {
       throw new RuntimeError(
         `Undefined method property '${expr.method.lexeme}' in ${klass.name}.`
