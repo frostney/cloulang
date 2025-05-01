@@ -23,6 +23,16 @@ describe("Basic Syntax Tests", () => {
     expect(output).toEqual(["Hello, Clou!"]);
   });
 
+  test("string and number concatenation", () => {
+    const code = `
+      let x = "hello";
+      let y = x + 5;
+      print(y);
+    `;
+    const output = runClouCode(code);
+    expect(output).toEqual(["hello5"]);
+  });
+
   test("conditionals", () => {
     const code = `
       let x = 10;
