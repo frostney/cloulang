@@ -130,12 +130,12 @@ describe("Edge Cases Tests", () => {
   test("object edge cases", () => {
     const code = `
       let obj = { name: "Clou" };
-      print("Non-existent property:", obj.age);
+      print("Non-existent property value:", obj.age);
       obj.age = 1;
       print("Object after adding property:", obj);
     `;
     const output = runClouCode(code);
-    expect(output[0]).toContain("Non-existent property: age");
+    expect(output[0]).toContain("Non-existent property value: null");
     expect(output[1]).toContain(
       "Object after adding property: { name: Clou, age: 1 }"
     );

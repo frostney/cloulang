@@ -449,8 +449,9 @@ export class Interpreter implements AST.Visitor<ValueType> {
       const obj = object as unknown as Record<string, ValueType>;
       const value = obj[expr.name.lexeme];
       if (value === undefined) {
-        return expr.name.lexeme; // Return the property name instead of undefined
+        return null;
       }
+
       if (value instanceof ClouFunction) {
         return value.bind(object as unknown as ClouInstance);
       }
