@@ -510,16 +510,27 @@ export class Interpreter implements AST.Visitor<ValueType> {
   }
 
   visitSuperExpr(expr: AST.Super): ValueType {
-    const superclass = this.environment.get({
-      lexeme: "super",
-    } as Token) as ClouClass;
-    const instance = this.environment.get({
-      lexeme: "this",
-    } as Token) as ClouInstance;
+    // Check if we're in a class context by looking for 'this'
+    let instance: ClouInstance;
+    try {
+      instance = this.environment.get({
+        lexeme: "this",
+      } as Token) as ClouInstance;
+    } catch {
+      throw new RuntimeError("Invalid super call");
+    }
 
-    const method = superclass.findMethod(expr.method.lexeme);
+    // Get the class from the instance
+    const klass = instance.klass;
+    if (!klass.superclass) {
+      throw new RuntimeError("Invalid super call");
+    }
+
+    const method = klass.superclass.findMethod(expr.method.lexeme);
     if (!method) {
-      throw new RuntimeError(`Undefined property '${expr.method.lexeme}'.`);
+      throw new RuntimeError(
+        `Undefined method property '${expr.method.lexeme}' in ${klass.name}.`
+      );
     }
 
     return method.bind(instance);

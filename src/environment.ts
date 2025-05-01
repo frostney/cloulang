@@ -135,7 +135,9 @@ export class ClouInstance {
       return method.bind(this);
     }
 
-    throw new RuntimeError(`Undefined property '${name.lexeme}'.`);
+    throw new RuntimeError(
+      `Undefined property '${name.lexeme}' in ${this.klass.name}.`
+    );
   }
 
   set(name: Token | string, value: ValueType): void {
