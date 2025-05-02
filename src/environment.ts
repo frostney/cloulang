@@ -343,4 +343,14 @@ export class Environment {
 
     throw new RuntimeError(`Undefined variable '${name.lexeme}'.`, name);
   }
+
+  hasVariable(name: Token): boolean {
+    if (this.values.has(name.lexeme)) {
+      return true;
+    }
+    if (this.parent !== null) {
+      return this.parent.hasVariable(name);
+    }
+    return false;
+  }
 }

@@ -11,7 +11,7 @@ import {
 import { Lexer } from "./lexer";
 import { Parser } from "./parser";
 import { TokenType } from "./token-types";
-import type * as AST from "./ast-nodes";
+import * as AST from "./ast-nodes";
 
 // Main interpreter class
 export class Interpreter implements AST.Visitor<ValueType> {
@@ -356,6 +356,31 @@ export class Interpreter implements AST.Visitor<ValueType> {
   }
 
   visitLiteralExpr(expr: AST.Literal): ValueType {
+    if (Array.isArray(expr.value)) {
+      // Handle template string
+      let result = "";
+      for (const part of expr.value) {
+        if (typeof part === "string") {
+          result += part;
+        } else {
+          // Parse and evaluate the expression
+          const lexer = new Lexer(part.expr);
+          const tokens = lexer.scanTokens();
+          const parser = new Parser(tokens);
+          const statements = parser.parse();
+          if (
+            statements.length > 0 &&
+            statements[0] instanceof AST.Expression
+          ) {
+            const value = this.evaluate(statements[0].expression);
+            result += value == null ? "" : this.stringify(value);
+          } else {
+            result += "";
+          }
+        }
+      }
+      return result;
+    }
     return expr.value as ValueType;
   }
 
@@ -762,6 +787,45 @@ export class Interpreter implements AST.Visitor<ValueType> {
     throw new RuntimeError(
       "Only arrays and objects are indexable for assignment."
     );
+  }
+
+  visitTemplateStringExpr(expr: AST.TemplateString): ValueType {
+    let result = "";
+    for (const part of expr.parts) {
+      if (typeof part === "string") {
+        result += part;
+      } else {
+        // For variable expressions, check if they exist first
+        if (part.expr instanceof AST.Variable) {
+          const name = part.expr.name;
+          if (!this.environment.hasVariable(name)) {
+            result += "";
+            continue;
+          }
+        }
+        const value = this.evaluate(part.expr);
+        result += value == null ? "" : this.stringify(value);
+      }
+    }
+    return result;
+  }
+
+  private stringify(value: ValueType): string {
+    if (value == null) return "null";
+
+    if (typeof value === "object") {
+      if (Array.isArray(value)) {
+        return `[${value.map((v) => this.stringify(v)).join(", ")}]`;
+      }
+      if (value instanceof ClouInstance) {
+        return value.toString();
+      }
+      const entries = Object.entries(value).map(
+        ([k, v]) => `${k}: ${this.stringify(v as ValueType)}`
+      );
+      return `{ ${entries.join(", ")} }`;
+    }
+    return String(value);
   }
 
   // Helper methods

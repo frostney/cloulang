@@ -295,4 +295,68 @@ describe("Integration Tests", () => {
     expect(output[1]).toContain("area 28.27431");
     expect(output[2]).toContain("area 8");
   });
+
+  test("string templates", () => {
+    const code = `
+      let name = "Alice";
+      let age = 30;
+      let numbers = [1, 2, 3];
+      
+      // Basic interpolation
+      print(\`Hello \${name}!\`);
+      
+      // Multiple expressions
+      print(\`\${name} is \${age} years old\`);
+      
+      // Complex expressions
+      print(\`Next year \${name} will be \${age + 1}\`);
+      
+      // Array access
+      print(\`First number is \${numbers[0]}\`);
+      
+      // Function calls
+      function double(x) {
+        return x * 2;
+      }
+      print(\`Double of 5 is \${double(5)}\`);
+      
+      // Conditional expressions
+      function isAdult(age) {
+        if (age > 18) {
+          return "an adult";
+        }
+        return "a minor";
+      }
+      print(\`\${name} is \${isAdult(age)}\`);
+      
+      // Multiple lines
+      print(\`Hello
+      \${name}!
+      How are you?\`);
+      
+      // Empty expressions
+      print(\`Empty: \${}\`);
+      
+      // Edge cases
+      print(\`\${null}\`);
+      print(\`\${undefined}\`);
+      print(\`\${true}\`);
+      print(\`\${false}\`);
+    `;
+    const output = runClouCode(code);
+    expect(output).toEqual([
+      "Hello Alice!",
+      "Alice is 30 years old",
+      "Next year Alice will be 31",
+      "First number is 1",
+      "Double of 5 is 10",
+      "Alice is an adult",
+      "Hello\n      Alice!\n      How are you?",
+      "Empty: ",
+      "",
+      "",
+      "true",
+      "false",
+    ]);
+  });
 });

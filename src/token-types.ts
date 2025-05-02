@@ -21,6 +21,8 @@ export enum TokenType {
   IDENTIFIER = "IDENTIFIER",
   NUMBER = "NUMBER",
   STRING = "STRING",
+  TEMPLATE_STRING = "TEMPLATE_STRING",
+  TEMPLATE_EXPR = "TEMPLATE_EXPR",
 
   // Operators
   PLUS = "PLUS",
@@ -57,7 +59,13 @@ export enum TokenType {
   EOF = "EOF",
 }
 
-export type TokenLiteral = number | string | boolean | null | undefined;
+export type TokenLiteral =
+  | number
+  | string
+  | boolean
+  | null
+  | undefined
+  | (string | { expr: string })[];
 
 export interface Token {
   type: TokenType;

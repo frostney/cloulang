@@ -1,5 +1,7 @@
-import { type Token, TokenType } from "./token-types";
+import type { Token } from "./token-types";
+import { TokenType } from "./token-types";
 import * as AST from "./ast-nodes";
+import { Lexer } from "./lexer";
 
 export class Parser {
   private tokens: Token[];
@@ -460,6 +462,30 @@ export class Parser {
 
     if (this.match(TokenType.NUMBER, TokenType.STRING)) {
       return new AST.Literal(this.previous().literal);
+    }
+    if (this.match(TokenType.TEMPLATE_STRING)) {
+      const literal = this.previous().literal;
+      if (Array.isArray(literal)) {
+        const parts = literal as (string | { expr: string })[];
+        // Parse each expression in the template string
+        const parsedParts = parts.map((part) => {
+          if (typeof part === "string") {
+            return part;
+          } else {
+            // Parse the expression
+            if (!part.expr.trim()) {
+              return { expr: new AST.Literal(null) };
+            }
+            const lexer = new Lexer(part.expr);
+            const tokens = lexer.scanTokens();
+            const parser = new Parser(tokens);
+            const expr = parser.expression();
+            return { expr };
+          }
+        });
+        return new AST.TemplateString(parsedParts);
+      }
+      throw new Error("Invalid template string literal");
     }
 
     if (this.match(TokenType.THIS)) return new AST.This(this.previous());

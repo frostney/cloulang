@@ -230,7 +230,7 @@ describe("Performance Tests", () => {
     }
 
     const [str1, str2, str3, str4, str5, str6, str7, str8, str9, str10] =
-      result as string[];
+      result;
 
     expect(str1).toBe(str2); // str1 and str2
     expect(str3).toBe(str4); // str3 and str4

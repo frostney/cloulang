@@ -166,6 +166,9 @@ export class Lexer {
       case "'":
         this.string("'");
         break;
+      case "`":
+        this.templateString();
+        break;
 
       default:
         if (this.isDigit(c)) {
@@ -202,6 +205,87 @@ export class Lexer {
       this.source.substring(this.start + 1, this.current - 1)
     );
     this.addToken(TokenType.STRING, value);
+  }
+
+  private templateString(): void {
+    const parts: (string | { expr: string })[] = [];
+    let currentPart = "";
+
+    while (!this.isAtEnd()) {
+      if (this.peek() == "`") {
+        // End of template string
+        this.advance();
+        if (currentPart) {
+          parts.push(currentPart);
+        }
+        this.addToken(
+          TokenType.TEMPLATE_STRING,
+          parts as unknown as TokenLiteral
+        );
+        return;
+      } else if (this.peek() == "\\") {
+        // Handle escape sequences
+        this.advance();
+        if (this.peek() == "`") {
+          currentPart += "`";
+          this.advance();
+        } else if (this.peek() == "\\") {
+          currentPart += "\\";
+          this.advance();
+        } else if (this.peek() == "$" && this.peekNext() == "{") {
+          currentPart += "${";
+          this.advance();
+          this.advance();
+        } else {
+          currentPart += "\\" + this.peek();
+          this.advance();
+        }
+      } else if (this.peek() == "$" && this.peekNext() == "{") {
+        // Start of template expression
+        if (currentPart) {
+          parts.push(currentPart);
+          currentPart = "";
+        }
+        this.advance(); // Consume $
+        this.advance(); // Consume {
+
+        // Parse the expression until we find a matching }
+        let expr = "";
+        let braceCount = 1;
+        while (!this.isAtEnd() && braceCount > 0) {
+          if (this.peek() == "{") {
+            braceCount++;
+          } else if (this.peek() == "}") {
+            braceCount--;
+          }
+          if (braceCount > 0) {
+            expr += this.peek();
+            this.advance();
+          }
+        }
+
+        if (this.isAtEnd()) {
+          throw new Error(
+            `Unterminated template expression at line ${this.line.toString()}`
+          );
+        }
+
+        this.advance(); // Consume the closing }
+        // Skip empty expressions
+        if (expr.trim()) {
+          parts.push({ expr });
+        } else {
+          parts.push("");
+        }
+      } else {
+        currentPart += this.peek();
+        this.advance();
+      }
+    }
+
+    throw new Error(
+      `Unterminated template string at line ${this.line.toString()}`
+    );
   }
 
   private number(): void {

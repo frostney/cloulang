@@ -23,6 +23,7 @@ export interface Visitor<R> {
   visitObjectExpr(expr: Object): R;
   visitIndexExpr(expr: Index): R;
   visitIndexAssignExpr(expr: IndexAssign): R;
+  visitTemplateStringExpr(expr: TemplateString): R;
 
   visitExpressionStmt(stmt: Expression): R;
   visitVarStmt(stmt: Var): R;
@@ -177,6 +178,14 @@ export class IndexAssign implements Node {
   }
 }
 
+export class TemplateString implements Node {
+  constructor(public parts: (string | { expr: Expr })[]) {}
+
+  accept<R>(visitor: Visitor<R>): R {
+    return visitor.visitTemplateStringExpr(this);
+  }
+}
+
 // Statement nodes
 export class Expression implements Node {
   constructor(public expression: Expr) {}
@@ -300,6 +309,7 @@ export type Expr =
   | Object
   | Index
   | IndexAssign
+  | TemplateString
   | Function;
 
 export type Stmt =
