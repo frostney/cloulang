@@ -43,7 +43,7 @@ export class Clou {
     const lexer = new Lexer(source);
     const tokens = lexer.scanTokens();
 
-    const parser = new Parser(tokens);
+    const parser = new Parser(tokens, source);
     const statements = parser.parse();
 
     if (this.hadError) {

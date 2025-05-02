@@ -20,7 +20,6 @@ export class Interpreter implements AST.Visitor<ValueType> {
   public moduleSystem: ModuleSystem;
   public currentDir = ".";
   private moduleCallStack = new Map<Environment, Set<string>>();
-  private loadingModules = new Set<string>(); // Track modules being loaded
   private currentSource = ""; // Track current source code
 
   constructor(moduleSystem?: ModuleSystem) {
@@ -102,7 +101,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
         const source = this.moduleSystem.getModuleSource(path, this.currentDir);
         const lexer = new Lexer(source);
         const tokens = lexer.scanTokens();
-        const parser = new Parser(tokens);
+        const parser = new Parser(tokens, source);
         const statements = parser.parse();
 
         // Execute the module in its own environment
@@ -379,7 +378,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
           // Parse and evaluate the expression
           const lexer = new Lexer(part.expr);
           const tokens = lexer.scanTokens();
-          const parser = new Parser(tokens);
+          const parser = new Parser(tokens, this.currentSource);
           const statements = parser.parse();
           if (
             statements.length > 0 &&

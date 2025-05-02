@@ -2,13 +2,16 @@ import type { Token } from "./token-types";
 import { TokenType } from "./token-types";
 import * as AST from "./ast-nodes";
 import { Lexer } from "./lexer";
+import { ParserError } from "./parser-error";
 
 export class Parser {
   private tokens: Token[];
   private current = 0;
+  private source: string;
 
-  constructor(tokens: Token[]) {
+  constructor(tokens: Token[], source: string) {
     this.tokens = tokens;
+    this.source = source;
   }
 
   parse(): AST.Stmt[] {
@@ -494,7 +497,7 @@ export class Parser {
             }
             const lexer = new Lexer(part.expr);
             const tokens = lexer.scanTokens();
-            const parser = new Parser(tokens);
+            const parser = new Parser(tokens, this.source);
             const expr = parser.expression();
             return { expr };
           }
@@ -648,7 +651,7 @@ export class Parser {
   }
 
   private error(token: Token, message: string): Error {
-    return new Error(`[Line ${token.line.toString()}] ${message}`);
+    return new ParserError(message, token, this.source);
   }
 
   private synchronize(): void {
