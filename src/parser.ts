@@ -47,13 +47,29 @@ export class Parser {
     this.consume(TokenType.LEFT_BRACE, "Expect '{' before class body.");
 
     const methods: AST.Function[] = [];
+    const properties = new Map<string, AST.Expr>();
+
     while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
-      methods.push(this.function("method"));
+      if (this.match(TokenType.PROPERTY)) {
+        const name = this.consume(
+          TokenType.IDENTIFIER,
+          "Expect property name."
+        );
+        this.consume(TokenType.ASSIGN, "Expect '=' after property name.");
+        const initializer = this.expression();
+        this.consume(
+          TokenType.SEMICOLON,
+          "Expect ';' after property declaration."
+        );
+        properties.set(name.lexeme, initializer);
+      } else {
+        methods.push(this.function("method"));
+      }
     }
 
     this.consume(TokenType.RIGHT_BRACE, "Expect '}' after class body.");
 
-    return new AST.Class(name, superclass, methods);
+    return new AST.Class(name, superclass, methods, properties);
   }
 
   private function(kind: string): AST.Function {

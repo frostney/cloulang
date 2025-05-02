@@ -30,6 +30,7 @@ export class Lexer {
     and: TokenType.AND,
     or: TokenType.OR,
     not: TokenType.NOT,
+    property: TokenType.PROPERTY,
   };
 
   private stringIntern: StringIntern;

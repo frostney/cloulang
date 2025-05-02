@@ -224,6 +224,12 @@ export class Interpreter implements AST.Visitor<ValueType> {
       // Create the class
       const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
 
+      // Initialize properties
+      for (const [name, initializer] of stmt.properties) {
+        const value = this.evaluate(initializer);
+        klass.setProperty(name, value);
+      }
+
       // Restore the previous environment
       this.environment = previousEnv;
 
@@ -245,6 +251,13 @@ export class Interpreter implements AST.Visitor<ValueType> {
     }
 
     const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
+
+    // Initialize properties
+    for (const [name, initializer] of stmt.properties) {
+      const value = this.evaluate(initializer);
+      klass.setProperty(name, value);
+    }
+
     this.environment.assign(stmt.name, klass);
 
     return null;

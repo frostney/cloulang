@@ -274,7 +274,8 @@ export class Class implements Node {
   constructor(
     public name: Token,
     public superclass: Variable | null,
-    public methods: Function[]
+    public methods: Function[],
+    public properties: Map<string, Expr> = new Map()
   ) {}
 
   accept<R>(visitor: Visitor<R>): R {

@@ -194,11 +194,15 @@ export class ClouFunction {
 
 // Class representation
 export class ClouClass {
+  private properties: Map<string, ValueType>;
+
   constructor(
     public name: string,
     public superclass: ClouClass | null,
     public methods: Map<string, ClouFunction>
-  ) {}
+  ) {
+    this.properties = new Map();
+  }
 
   findMethod(name: string): ClouFunction | null {
     const method = this.methods.get(name);
@@ -208,6 +212,23 @@ export class ClouClass {
 
     if (this.superclass) {
       return this.superclass.findMethod(name);
+    }
+
+    return null;
+  }
+
+  setProperty(name: string, value: ValueType): void {
+    this.properties.set(name, value);
+  }
+
+  getProperty(name: string): ValueType | null {
+    const value = this.properties.get(name);
+    if (value !== undefined) {
+      return value;
+    }
+
+    if (this.superclass) {
+      return this.superclass.getProperty(name);
     }
 
     return null;
@@ -247,6 +268,12 @@ export class ClouInstance {
       return this.properties[index] ?? null;
     }
 
+    // Check for class properties
+    const classProperty = this.klass.getProperty(propertyName);
+    if (classProperty !== null) {
+      return classProperty;
+    }
+
     // Check for methods
     const method = this.klass.findMethod(propertyName);
     if (method) {
@@ -274,6 +301,12 @@ export class ClouInstance {
       this.properties[index] = value;
       // Cache the index for future lookups
       this.propertyCache.set(propertyName, index);
+      return;
+    }
+
+    // Check if it's a class property
+    if (this.klass.getProperty(propertyName) !== null) {
+      this.klass.setProperty(propertyName, value);
       return;
     }
 

@@ -16,6 +16,7 @@ export enum TokenType {
   NULL = "NULL",
   TRUE = "TRUE",
   FALSE = "FALSE",
+  PROPERTY = "PROPERTY",
 
   // Identifiers & literals
   IDENTIFIER = "IDENTIFIER",

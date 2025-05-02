@@ -56,6 +56,60 @@ describe("Classes and Inheritance Tests", () => {
     expect(output).toEqual(["Rex barks", "Rex is a German Shepherd"]);
   });
 
+  test("class properties", () => {
+    const code = `
+      class Person {
+        property name = "John";
+        property age = 30;
+      }
+
+      let person = new Person();
+      print(person.name);
+      print(person.age);
+    `;
+    const output = runClouCode(code);
+    expect(output).toEqual(["John", "30"]);
+  });
+
+  test("class properties with inheritance", () => {
+    const code = `
+      class Animal {
+        property name = "Generic Animal";
+      }
+
+      class Dog extends Animal {
+        property breed = "Labrador";
+      }
+
+      let dog = new Dog();
+      print(dog.name);
+      print(dog.breed);
+    `;
+
+    const output = runClouCode(code);
+    expect(output).toEqual(["Generic Animal", "Labrador"]);
+  });
+
+  test("class properties can be changed", () => {
+    const code = `
+      class Person {
+        property name = "John";
+        property age = 30;
+
+        function changeName(newName) {
+          this.name = newName;
+        }
+      }
+
+      let person = new Person();
+      print(person.name);
+      person.changeName("Jane");
+      print(person.name);
+    `;
+    const output = runClouCode(code);
+    expect(output).toEqual(["John", "Jane"]);
+  });
+
   test("deep class inheritance", () => {
     const code = `
       class Animal {
