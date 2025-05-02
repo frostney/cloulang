@@ -75,14 +75,11 @@ export class Parser {
     return new AST.Class(name, superclass, methods, properties);
   }
 
-  private function(kind: string): AST.Function {
-    if (kind === "method") {
-      this.consume(TokenType.FUNCTION, "Expect 'function' keyword for method.");
-    }
-
-    const name = this.consume(TokenType.IDENTIFIER, `Expect ${kind} name.`);
-    this.consume(TokenType.LEFT_PAREN, `Expect '(' after ${kind} name.`);
-
+  private parseParameters(): {
+    parameters: Token[];
+    defaults: (AST.Expr | null)[];
+    restParam: Token | null;
+  } {
     const parameters: Token[] = [];
     const defaults: (AST.Expr | null)[] = [];
     let restParam: Token | null = null;
@@ -119,6 +116,19 @@ export class Parser {
       } while (this.match(TokenType.COMMA));
     }
 
+    return { parameters, defaults, restParam };
+  }
+
+  private function(kind: string): AST.Function {
+    if (kind === "method") {
+      this.consume(TokenType.FUNCTION, "Expect 'function' keyword for method.");
+    }
+
+    const name = this.consume(TokenType.IDENTIFIER, `Expect ${kind} name.`);
+    this.consume(TokenType.LEFT_PAREN, `Expect '(' after ${kind} name.`);
+
+    const { parameters, defaults, restParam } = this.parseParameters();
+
     this.consume(TokenType.RIGHT_PAREN, "Expect ')' after parameters.");
     this.consume(TokenType.LEFT_BRACE, `Expect '{' before ${kind} body.`);
     const body = this.block();
@@ -148,35 +158,13 @@ export class Parser {
   private functionExpression(): AST.Function {
     this.consume(TokenType.LEFT_PAREN, "Expect '(' after 'function'.");
 
-    const parameters: Token[] = [];
-    const defaults: (AST.Expr | null)[] = [];
-    if (!this.check(TokenType.RIGHT_PAREN)) {
-      do {
-        if (parameters.length >= 255) {
-          this.error(this.peek(), "Can't have more than 255 parameters.");
-        }
-
-        const param = this.consume(
-          TokenType.IDENTIFIER,
-          "Expect parameter name."
-        );
-        parameters.push(param);
-
-        // Check for default value
-        if (this.match(TokenType.ASSIGN)) {
-          defaults.push(this.expression());
-        } else {
-          defaults.push(null);
-        }
-      } while (this.match(TokenType.COMMA));
-    }
+    const { parameters, defaults, restParam } = this.parseParameters();
 
     this.consume(TokenType.RIGHT_PAREN, "Expect ')' after parameters.");
-
     this.consume(TokenType.LEFT_BRACE, "Expect '{' before function body.");
     const body = this.block();
 
-    return new AST.Function(null, parameters, defaults, body);
+    return new AST.Function(null, parameters, defaults, body, restParam);
   }
 
   private statement(): AST.Stmt {

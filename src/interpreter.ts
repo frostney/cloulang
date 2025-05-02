@@ -29,26 +29,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
     this.globals.define(
       "print",
       (...args: ValueType[]) => {
-        const stringify = (value: ValueType): string => {
-          if (Array.isArray(value)) {
-            return `[${(value as ValueType[]).map(stringify).join(", ")}]`;
-          }
-          if (value instanceof ClouInstance) {
-            return value.toString();
-          }
-          if (typeof value === "object" && value !== null) {
-            if (Object.keys(value).length === 0) {
-              return "{}";
-            }
-            const entries = Object.entries(value).map(([key, val]) => {
-              return `${key}: ${stringify(val as ValueType)}`;
-            });
-            return `{ ${entries.join(", ")} }`;
-          }
-          return String(value);
-        };
-
-        const stringified = args.map(stringify);
+        const stringified = args.map((arg) => this.stringify(arg));
         console.log(stringified.join(" "));
         return null;
       },
@@ -105,15 +86,9 @@ export class Interpreter implements AST.Visitor<ValueType> {
         const statements = parser.parse();
 
         // Execute the module in its own environment
-        const previousEnv = this.environment;
-        this.environment = moduleEnv;
-
-        try {
-          // Execute the module code
+        this.withEnvironment(moduleEnv, () => {
           this.interpret(statements, source);
-        } finally {
-          this.environment = previousEnv;
-        }
+        });
 
         return exportsObj;
       },
@@ -204,51 +179,31 @@ export class Interpreter implements AST.Visitor<ValueType> {
     const classEnvironment = new Environment(this.environment);
     this.environment.define(stmt.name.lexeme, null, false);
 
-    // If there's a superclass, set up the inheritance chain
-    if (stmt.superclass !== null) {
-      // Store the current environment
-      const previousEnv = this.environment;
-      this.environment = classEnvironment;
+    // Process methods in the class environment
+    const methods = new Map<string, ClouFunction>();
 
-      // Define 'super' in the class environment
-      this.environment.define("super", superclass);
-
-      // Process methods in the class environment
-      const methods = new Map<string, ClouFunction>();
+    const processMethods = () => {
       for (const method of stmt.methods) {
-        const function_ = new ClouFunction(method, this.environment);
+        const function_ = new ClouFunction(
+          method,
+          this.environment,
+          method.name?.lexeme === "init"
+        );
         methods.set(method.name?.lexeme ?? "", function_);
       }
+    };
 
-      // Create the class
-      const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
-
-      // Initialize properties
-      for (const [name, initializer] of stmt.properties) {
-        const value = this.evaluate(initializer);
-        klass.setProperty(name, value);
-      }
-
-      // Restore the previous environment
-      this.environment = previousEnv;
-
-      // Define the class in the outer environment
-      this.environment.assign(stmt.name, klass);
-
-      return null;
+    // If there's a superclass, set up the inheritance chain
+    if (stmt.superclass !== null) {
+      this.withEnvironment(classEnvironment, () => {
+        this.environment.define("super", superclass);
+        processMethods();
+      });
+    } else {
+      processMethods();
     }
 
-    // If no superclass, process methods in the current environment
-    const methods = new Map<string, ClouFunction>();
-    for (const method of stmt.methods) {
-      const function_ = new ClouFunction(
-        method,
-        this.environment,
-        method.name?.lexeme === "init"
-      );
-      methods.set(method.name?.lexeme ?? "", function_);
-    }
-
+    // Create the class
     const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
 
     // Initialize properties
@@ -257,8 +212,8 @@ export class Interpreter implements AST.Visitor<ValueType> {
       klass.setProperty(name, value);
     }
 
+    // Define the class in the outer environment
     this.environment.assign(stmt.name, klass);
-
     return null;
   }
 
@@ -822,15 +777,26 @@ export class Interpreter implements AST.Visitor<ValueType> {
     return result;
   }
 
-  private stringify(value: ValueType): string {
-    if (value == null) return "null";
+  private withEnvironment<T>(newEnv: Environment, fn: () => T): T {
+    const previous = this.environment;
+    this.environment = newEnv;
+    try {
+      return fn();
+    } finally {
+      this.environment = previous;
+    }
+  }
 
-    if (typeof value === "object") {
-      if (Array.isArray(value)) {
-        return `[${value.map((v) => this.stringify(v)).join(", ")}]`;
-      }
-      if (value instanceof ClouInstance) {
-        return value.toString();
+  private stringify = (value: ValueType): string => {
+    if (Array.isArray(value)) {
+      return `[${(value as ValueType[]).map(this.stringify).join(", ")}]`;
+    }
+    if (value instanceof ClouInstance) {
+      return value.toString();
+    }
+    if (typeof value === "object" && value !== null) {
+      if (Object.keys(value).length === 0) {
+        return "{}";
       }
       const entries = Object.entries(value).map(
         ([k, v]) => `${k}: ${this.stringify(v as ValueType)}`
@@ -838,7 +804,7 @@ export class Interpreter implements AST.Visitor<ValueType> {
       return `{ ${entries.join(", ")} }`;
     }
     return String(value);
-  }
+  };
 
   // Helper methods
 
