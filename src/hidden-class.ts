@@ -1,12 +1,12 @@
-export interface HiddenClassType {
-  addProperty(name: string): HiddenClassType;
+export interface IHiddenClass {
+  addProperty(name: string): IHiddenClass;
   getPropertyIndex(name: string): number | undefined;
   getPropertyCount(): number;
 }
 
-export class HiddenClassImpl implements HiddenClassType {
+export class HiddenClass implements IHiddenClass {
   private propertyIndexes: Map<string, number>;
-  private transitionCache: Map<string, HiddenClassImpl>;
+  private transitionCache: Map<string, HiddenClass>;
   private propertyCount: number;
 
   constructor() {
@@ -15,7 +15,7 @@ export class HiddenClassImpl implements HiddenClassType {
     this.propertyCount = 0;
   }
 
-  public addProperty(name: string): HiddenClassType {
+  public addProperty(name: string): IHiddenClass {
     // Check if we already have a transition for this property
     const existing = this.transitionCache.get(name);
     if (existing) {
@@ -23,7 +23,7 @@ export class HiddenClassImpl implements HiddenClassType {
     }
 
     // Create a new hidden class with the additional property
-    const newClass = new HiddenClassImpl();
+    const newClass = new HiddenClass();
     // Copy existing property indexes
     this.propertyIndexes.forEach((index, prop) => {
       newClass.propertyIndexes.set(prop, index);
@@ -46,5 +46,3 @@ export class HiddenClassImpl implements HiddenClassType {
     return this.propertyCount;
   }
 }
-
-export const HiddenClass = HiddenClassImpl;

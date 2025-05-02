@@ -1,7 +1,7 @@
 import type { Interpreter } from "./interpreter";
 import type { Token } from "./token-types";
 import type * as AST from "./ast-nodes";
-import { HiddenClass } from "./hidden-class";
+import { HiddenClass, type IHiddenClass } from "./hidden-class";
 
 export type ValueType =
   | number
@@ -220,7 +220,7 @@ export class ClouClass {
 
 // Instance of a class
 export class ClouInstance {
-  private hiddenClass: HiddenClass;
+  private hiddenClass: IHiddenClass;
   private properties: ValueType[];
   private propertyCache: Map<string, number>;
 
