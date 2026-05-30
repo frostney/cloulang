@@ -130,7 +130,7 @@ export class ReturnError extends Error {
 // Function representation
 export class ClouFunction {
   constructor(
-    public declaration: AST.Function,
+    public declaration: AST.FunctionStmt | AST.FunctionExpr,
     public closure: Environment,
     public isInitializer = false,
     public boundThis: ClouInstance | null = null
@@ -381,9 +381,23 @@ export class Environment {
     if (this.values.has(name.lexeme)) {
       return true;
     }
-    if (this.parent !== null) {
+    if (this.parent) {
       return this.parent.hasVariable(name);
     }
     return false;
+  }
+
+  getAt(distance: number, name: string): ValueType {
+    if (distance === 0) {
+      const variable = this.values.get(name);
+      if (!variable) {
+        throw new RuntimeError(`Undefined variable '${name}'.`);
+      }
+      return variable.value;
+    }
+    if (!this.parent) {
+      throw new RuntimeError(`Undefined variable '${name}'.`);
+    }
+    return this.parent.getAt(distance - 1, name);
   }
 }

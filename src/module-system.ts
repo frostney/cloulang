@@ -35,7 +35,6 @@ interface IModuleSystem {
 export class ModuleSystem implements IModuleSystem {
   private modules = new Map<string, ModuleMetadata>();
   private files = new Map<string, string>();
-  private moduleStack: string[] = [];
   private preloadedModules = new Set<string>();
   private requireCache = new Map<string, ValueType>(); // Cache for require results
 

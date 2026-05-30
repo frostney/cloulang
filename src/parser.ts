@@ -44,12 +44,12 @@ export class Parser {
     let superclass = null;
     if (this.match(TokenType.EXTENDS)) {
       this.consume(TokenType.IDENTIFIER, "Expect superclass name.");
-      superclass = new AST.Variable(this.previous());
+      superclass = AST.createVariable(this.previous());
     }
 
     this.consume(TokenType.LEFT_BRACE, "Expect '{' before class body.");
 
-    const methods: AST.Function[] = [];
+    const methods: AST.FunctionStmt[] = [];
     const properties = new Map<string, AST.Expr>();
 
     while (!this.check(TokenType.RIGHT_BRACE) && !this.isAtEnd()) {
@@ -72,7 +72,7 @@ export class Parser {
 
     this.consume(TokenType.RIGHT_BRACE, "Expect '}' after class body.");
 
-    return new AST.Class(name, superclass, methods, properties);
+    return AST.createClassStmt(name, superclass, methods, properties);
   }
 
   private parseParameters(): {
@@ -119,7 +119,7 @@ export class Parser {
     return { parameters, defaults, restParam };
   }
 
-  private function(kind: string): AST.Function {
+  private function(kind: string): AST.FunctionStmt {
     if (kind === "method") {
       this.consume(TokenType.FUNCTION, "Expect 'function' keyword for method.");
     }
@@ -133,7 +133,7 @@ export class Parser {
     this.consume(TokenType.LEFT_BRACE, `Expect '{' before ${kind} body.`);
     const body = this.block();
 
-    return new AST.Function(name, parameters, defaults, body, restParam);
+    return AST.createFunctionStmt(name, parameters, defaults, body, restParam);
   }
 
   private varDeclaration(isConst: boolean): AST.Stmt {
@@ -152,10 +152,10 @@ export class Parser {
     }
 
     this.consume(TokenType.SEMICOLON, "Expect ';' after variable declaration.");
-    return new AST.Var(name, initializer, isConst);
+    return AST.createVarStmt(name, initializer, isConst);
   }
 
-  private functionExpression(): AST.Function {
+  private functionExpression(): AST.FunctionExpr {
     this.consume(TokenType.LEFT_PAREN, "Expect '(' after 'function'.");
 
     const { parameters, defaults, restParam } = this.parseParameters();
@@ -164,7 +164,7 @@ export class Parser {
     this.consume(TokenType.LEFT_BRACE, "Expect '{' before function body.");
     const body = this.block();
 
-    return new AST.Function(null, parameters, defaults, body, restParam);
+    return AST.createFunctionExpr(null, parameters, defaults, body, restParam);
   }
 
   private statement(): AST.Stmt {
@@ -172,7 +172,8 @@ export class Parser {
     if (this.match(TokenType.WHILE)) return this.whileStatement();
     if (this.match(TokenType.FOR)) return this.forStatement();
     if (this.match(TokenType.RETURN)) return this.returnStatement();
-    if (this.match(TokenType.LEFT_BRACE)) return new AST.Block(this.block());
+    if (this.match(TokenType.LEFT_BRACE))
+      return AST.createBlockStmt(this.block());
 
     return this.expressionStatement();
   }
@@ -188,7 +189,7 @@ export class Parser {
       elseBranch = this.statement();
     }
 
-    return new AST.If(condition, thenBranch, elseBranch);
+    return AST.createIfStmt(condition, thenBranch, elseBranch);
   }
 
   private whileStatement(): AST.Stmt {
@@ -198,7 +199,7 @@ export class Parser {
 
     const body = this.statement();
 
-    return new AST.While(condition, body);
+    return AST.createWhileStmt(condition, body);
   }
 
   private forStatement(): AST.Stmt {
@@ -231,17 +232,26 @@ export class Parser {
 
     // Desugaring the for loop into a while loop
     if (increment !== null) {
-      body = new AST.Block([body, new AST.Expression(increment)]);
+      body = AST.createBlockStmt([
+        body,
+        AST.createExpressionStmt(
+          AST.createBinary(
+            increment,
+            AST.createLiteral(TokenType.PLUS),
+            AST.createLiteral(1)
+          )
+        ),
+      ]);
     }
 
-    condition ??= new AST.Literal(true);
-    body = new AST.While(condition, body);
+    condition ??= AST.createLiteral(true);
+    body = AST.createWhileStmt(condition, body);
 
     if (initializer !== null) {
-      body = new AST.Block([initializer, body]);
+      body = AST.createBlockStmt([initializer, body]);
     }
 
-    return new AST.For(initializer, condition, increment, body);
+    return AST.createForStmt(initializer, condition, increment, body);
   }
 
   private returnStatement(): AST.Stmt {
@@ -253,7 +263,7 @@ export class Parser {
     }
 
     this.consume(TokenType.SEMICOLON, "Expect ';' after return value.");
-    return new AST.Return(keyword, value);
+    return AST.createReturnStmt(keyword, value);
   }
 
   private block(): AST.Stmt[] {
@@ -270,7 +280,7 @@ export class Parser {
   private expressionStatement(): AST.Stmt {
     const expr = this.expression();
     this.consume(TokenType.SEMICOLON, "Expect ';' after expression.");
-    return new AST.Expression(expr);
+    return AST.createExpressionStmt(expr);
   }
 
   // Expression parsing methods
@@ -286,13 +296,13 @@ export class Parser {
       const equals = this.previous();
       const value = this.assignment();
 
-      if (expr instanceof AST.Variable) {
+      if (AST.isVariableExpr(expr)) {
         const name = expr.name;
-        return new AST.Assign(name, value);
-      } else if (expr instanceof AST.Get) {
-        return new AST.Set(expr.object, expr.name, value);
-      } else if (expr instanceof AST.Index) {
-        return new AST.IndexAssign(expr.object, expr.index, value);
+        return AST.createAssign(name, value);
+      } else if (AST.isGetExpr(expr)) {
+        return AST.createSet(expr.object, expr.name, value);
+      } else if (AST.isIndexExpr(expr)) {
+        return AST.createIndexAssignExpr(expr.object, expr.index, value);
       }
 
       this.error(equals, "Invalid assignment target.");
@@ -307,7 +317,7 @@ export class Parser {
     while (this.match(TokenType.OR)) {
       const operator = this.previous();
       const right = this.logicalAnd();
-      expr = new AST.Logical(expr, operator, right);
+      expr = AST.createBinary(expr, operator, right);
     }
 
     return expr;
@@ -319,7 +329,7 @@ export class Parser {
     while (this.match(TokenType.AND)) {
       const operator = this.previous();
       const right = this.equality();
-      expr = new AST.Logical(expr, operator, right);
+      expr = AST.createBinary(expr, operator, right);
     }
 
     return expr;
@@ -331,7 +341,7 @@ export class Parser {
     while (this.match(TokenType.EQUAL, TokenType.NOT_EQUAL)) {
       const operator = this.previous();
       const right = this.comparison();
-      expr = new AST.Binary(expr, operator, right);
+      expr = AST.createBinary(expr, operator, right);
     }
 
     return expr;
@@ -350,7 +360,7 @@ export class Parser {
     ) {
       const operator = this.previous();
       const right = this.term();
-      expr = new AST.Binary(expr, operator, right);
+      expr = AST.createBinary(expr, operator, right);
     }
 
     return expr;
@@ -362,7 +372,7 @@ export class Parser {
     while (this.match(TokenType.PLUS, TokenType.MINUS)) {
       const operator = this.previous();
       const right = this.factor();
-      expr = new AST.Binary(expr, operator, right);
+      expr = AST.createBinary(expr, operator, right);
     }
 
     return expr;
@@ -374,7 +384,7 @@ export class Parser {
     while (this.match(TokenType.MULTIPLY, TokenType.DIVIDE, TokenType.MODULO)) {
       const operator = this.previous();
       const right = this.unary();
-      expr = new AST.Binary(expr, operator, right);
+      expr = AST.createBinary(expr, operator, right);
     }
 
     return expr;
@@ -384,7 +394,7 @@ export class Parser {
     if (this.match(TokenType.NOT, TokenType.MINUS)) {
       const operator = this.previous();
       const right = this.unary();
-      return new AST.Unary(operator, right);
+      return AST.createUnary(operator, right);
     }
 
     return this.power();
@@ -396,7 +406,7 @@ export class Parser {
     while (this.match(TokenType.POWER)) {
       const operator = this.previous();
       const right = this.unary(); // Right-associative
-      expr = new AST.Binary(expr, operator, right);
+      expr = AST.createBinary(expr, operator, right);
     }
 
     return expr;
@@ -418,12 +428,12 @@ export class Parser {
           TokenType.IDENTIFIER,
           "Expect property name after '.'."
         );
-        expr = new AST.Get(expr, name);
+        expr = AST.createGet(expr, name);
       } else if (this.previous().type === TokenType.LEFT_BRACKET) {
         const bracket = this.previous();
         const index = this.expression();
         this.consume(TokenType.RIGHT_BRACKET, "Expect ']' after index.");
-        expr = new AST.Index(expr, index, bracket);
+        expr = AST.createIndexExpr(expr, index, bracket);
       }
     }
 
@@ -447,28 +457,28 @@ export class Parser {
       "Expect ')' after arguments."
     );
 
-    if (callee instanceof AST.Variable && callee.name.lexeme === "new") {
+    if (AST.isVariableExpr(callee) && callee.name.lexeme === "new") {
       // Handle 'new' expressions
       if (args.length === 0) {
         throw this.error(paren, "Expected class name after 'new'.");
       }
 
-      const className = (args[0] as AST.Variable).name;
+      const className = (args[0] as AST.VariableExpr).name;
       const constructorArgs = args.slice(1);
 
-      return new AST.New(className, paren, constructorArgs);
+      return AST.createNew(className, paren, constructorArgs);
     }
 
-    return new AST.Call(callee, paren, args);
+    return AST.createCall(callee, paren, args);
   }
 
   private primary(): AST.Expr {
-    if (this.match(TokenType.FALSE)) return new AST.Literal(false);
-    if (this.match(TokenType.TRUE)) return new AST.Literal(true);
-    if (this.match(TokenType.NULL)) return new AST.Literal(null);
+    if (this.match(TokenType.FALSE)) return AST.createLiteral(false);
+    if (this.match(TokenType.TRUE)) return AST.createLiteral(true);
+    if (this.match(TokenType.NULL)) return AST.createLiteral(null);
 
     if (this.match(TokenType.NUMBER, TokenType.STRING)) {
-      return new AST.Literal(this.previous().literal);
+      return AST.createLiteral(this.previous().literal);
     }
     if (this.match(TokenType.TEMPLATE_STRING)) {
       const literal = this.previous().literal;
@@ -481,7 +491,7 @@ export class Parser {
           } else {
             // Parse the expression
             if (!part.expr.trim()) {
-              return { expr: new AST.Literal(null) };
+              return { expr: AST.createLiteral(null) };
             }
             const lexer = new Lexer(part.expr);
             const tokens = lexer.scanTokens();
@@ -490,15 +500,15 @@ export class Parser {
             return { expr };
           }
         });
-        return new AST.TemplateString(parsedParts);
+        return AST.createTemplateStringExpr(parsedParts);
       }
       throw new Error("Invalid template string literal");
     }
 
-    if (this.match(TokenType.THIS)) return new AST.This(this.previous());
+    if (this.match(TokenType.THIS)) return AST.createThis(this.previous());
 
     if (this.match(TokenType.IDENTIFIER)) {
-      return new AST.Variable(this.previous());
+      return AST.createVariable(this.previous());
     }
 
     if (this.match(TokenType.SUPER)) {
@@ -508,7 +518,7 @@ export class Parser {
         TokenType.IDENTIFIER,
         "Expect superclass method name."
       );
-      return new AST.Super(keyword, method);
+      return AST.createSuper(keyword, method);
     }
 
     if (this.match(TokenType.FUNCTION)) {
@@ -536,13 +546,13 @@ export class Parser {
         TokenType.RIGHT_PAREN,
         "Expect ')' after constructor arguments."
       );
-      return new AST.New(className, paren, args);
+      return AST.createNew(className, paren, args);
     }
 
     if (this.match(TokenType.LEFT_PAREN)) {
       const expr = this.expression();
       this.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.");
-      return new AST.Grouping(expr);
+      return AST.createGrouping(expr);
     }
 
     if (this.match(TokenType.LEFT_BRACKET)) {
@@ -572,7 +582,7 @@ export class Parser {
         TokenType.RIGHT_BRACE,
         "Expect '}' after object properties."
       );
-      return new AST.Object(properties);
+      return AST.createObjectExpr(properties);
     }
 
     throw this.error(this.peek(), "Expect expression.");
@@ -587,7 +597,7 @@ export class Parser {
     }
 
     this.consume(TokenType.RIGHT_BRACKET, "Expect ']' after array elements.");
-    return new AST.ArrayExpr(elements);
+    return AST.createArrayExpr(elements);
   }
 
   // Helper methods

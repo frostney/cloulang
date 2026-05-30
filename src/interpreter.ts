@@ -14,7 +14,7 @@ import { TokenType } from "./token-types";
 import * as AST from "./ast-nodes";
 
 // Main interpreter class
-export class Interpreter implements AST.Visitor<ValueType> {
+export class Interpreter {
   readonly globals = new Environment();
   private environment: Environment = this.globals;
   public moduleSystem: ModuleSystem;
@@ -29,7 +29,12 @@ export class Interpreter implements AST.Visitor<ValueType> {
     this.globals.define(
       "print",
       (...args: ValueType[]) => {
-        const stringified = args.map((arg) => this.stringify(arg));
+        const stringified = args.map((arg) => {
+          if (Array.isArray(arg)) {
+            return arg.map(this.stringify).join(" ");
+          }
+          return this.stringify(arg);
+        });
         console.log(stringified.join(" "));
         return null;
       },
@@ -105,407 +110,382 @@ export class Interpreter implements AST.Visitor<ValueType> {
     return results;
   }
 
-  // Statement visitors
-
-  visitExpressionStmt(stmt: AST.Expression): ValueType {
-    return this.evaluate(stmt.expression);
-  }
-
-  visitVarStmt(stmt: AST.Var): ValueType {
-    let value = null;
-    if (stmt.initializer) {
-      value = this.evaluate(stmt.initializer);
+  // Statement execution
+  execute(stmt: AST.Stmt): ValueType {
+    if (AST.isExpressionStmt(stmt)) {
+      return this.evaluate(stmt.expression);
     }
 
-    this.environment.define(stmt.name.lexeme, value, stmt.isConst);
-    return null;
-  }
-
-  visitBlockStmt(stmt: AST.Block): ValueType {
-    this.executeBlock(stmt.statements, new Environment(this.environment));
-    return null;
-  }
-
-  visitIfStmt(stmt: AST.If): ValueType {
-    if (this.isTruthy(this.evaluate(stmt.condition))) {
-      this.execute(stmt.thenBranch);
-    } else if (stmt.elseBranch) {
-      this.execute(stmt.elseBranch);
-    }
-    return null;
-  }
-
-  visitWhileStmt(stmt: AST.While): ValueType {
-    while (this.isTruthy(this.evaluate(stmt.condition))) {
-      this.execute(stmt.body);
-    }
-    return null;
-  }
-
-  visitForStmt(stmt: AST.For): ValueType {
-    // For loops are desugared to while loops in the parser
-    this.execute(stmt.body);
-    return null;
-  }
-
-  visitFunctionStmt(stmt: AST.Function): ValueType {
-    const func = new ClouFunction(stmt, this.environment);
-    if (stmt.name) {
-      this.environment.define(stmt.name.lexeme, func);
+    if (AST.isVarStmt(stmt)) {
+      let value = null;
+      if (stmt.initializer) {
+        value = this.evaluate(stmt.initializer);
+      }
+      this.environment.define(stmt.name.lexeme, value, stmt.isConst);
       return null;
     }
-    return func;
-  }
 
-  visitReturnStmt(stmt: AST.Return): ValueType {
-    let value = null;
-    if (stmt.value) {
-      value = this.evaluate(stmt.value);
+    if (AST.isBlockStmt(stmt)) {
+      this.executeBlock(stmt.statements, new Environment(this.environment));
+      return null;
     }
 
-    throw new ReturnError(value);
-  }
-
-  visitClassStmt(stmt: AST.Class): ValueType {
-    let superclass = null;
-    if (stmt.superclass !== null) {
-      superclass = this.evaluate(stmt.superclass);
-      if (!(superclass instanceof ClouClass)) {
-        throw new RuntimeError("Superclass must be a class.");
+    if (AST.isIfStmt(stmt)) {
+      if (this.isTruthy(this.evaluate(stmt.condition))) {
+        this.execute(stmt.thenBranch);
+      } else if (stmt.elseBranch) {
+        this.execute(stmt.elseBranch);
       }
+      return null;
     }
 
-    // Create a new environment for the class
-    const classEnvironment = new Environment(this.environment);
-    this.environment.define(stmt.name.lexeme, null, false);
-
-    // Process methods in the class environment
-    const methods = new Map<string, ClouFunction>();
-
-    const processMethods = () => {
-      for (const method of stmt.methods) {
-        const function_ = new ClouFunction(
-          method,
-          this.environment,
-          method.name?.lexeme === "init"
-        );
-        methods.set(method.name?.lexeme ?? "", function_);
+    if (AST.isWhileStmt(stmt)) {
+      while (this.isTruthy(this.evaluate(stmt.condition))) {
+        this.execute(stmt.body);
       }
-    };
+      return null;
+    }
 
-    // If there's a superclass, set up the inheritance chain
-    if (stmt.superclass !== null) {
-      this.withEnvironment(classEnvironment, () => {
-        this.environment.define("super", superclass);
+    if (AST.isForStmt(stmt)) {
+      // For loops are desugared to while loops in the parser
+      this.execute(stmt.body);
+      return null;
+    }
+
+    if (AST.isFunctionStmt(stmt)) {
+      const func = new ClouFunction(stmt, this.environment);
+      if (stmt.name) {
+        this.environment.define(stmt.name.lexeme, func);
+        return null;
+      }
+      return func;
+    }
+
+    if (AST.isReturnStmt(stmt)) {
+      let value = null;
+      if (stmt.value) {
+        value = this.evaluate(stmt.value);
+      }
+      throw new ReturnError(value);
+    }
+
+    if (AST.isClassStmt(stmt)) {
+      let superclass = null;
+      if (stmt.superclass !== null) {
+        superclass = this.evaluate(stmt.superclass);
+        if (!(superclass instanceof ClouClass)) {
+          throw new RuntimeError("Superclass must be a class.");
+        }
+      }
+
+      // Create a new environment for the class
+      const classEnvironment = new Environment(this.environment);
+      this.environment.define(stmt.name.lexeme, null, false);
+
+      // Process methods in the class environment
+      const methods = new Map<string, ClouFunction>();
+
+      const processMethods = () => {
+        for (const method of stmt.methods) {
+          const function_ = new ClouFunction(
+            method,
+            this.environment,
+            method.name?.lexeme === "init"
+          );
+          methods.set(method.name?.lexeme ?? "", function_);
+        }
+      };
+
+      // If there's a superclass, set up the inheritance chain
+      if (stmt.superclass !== null) {
+        this.withEnvironment(classEnvironment, () => {
+          this.environment.define("super", superclass);
+          processMethods();
+        });
+      } else {
         processMethods();
-      });
-    } else {
-      processMethods();
+      }
+
+      // Create the class
+      const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
+
+      // Initialize properties
+      for (const [name, initializer] of stmt.properties) {
+        const value = this.evaluate(initializer);
+        klass.setProperty(name, value);
+      }
+
+      // Define the class in the outer environment
+      this.environment.assign(stmt.name, klass);
+      return null;
     }
 
-    // Create the class
-    const klass = new ClouClass(stmt.name.lexeme, superclass, methods);
+    if (AST.isExportStmt(stmt)) {
+      const exportsToken = {
+        type: TokenType.IDENTIFIER,
+        lexeme: "exports",
+        literal: null,
+        line: stmt.name.line,
+      };
+      const exports = this.environment.get(exportsToken);
 
-    // Initialize properties
-    for (const [name, initializer] of stmt.properties) {
-      const value = this.evaluate(initializer);
-      klass.setProperty(name, value);
+      let value;
+      if (stmt.value) {
+        value = this.evaluate(stmt.value);
+      } else {
+        try {
+          value = this.environment.get(stmt.name);
+        } catch {
+          throw new RuntimeError(
+            `Cannot export undefined variable '${stmt.name.lexeme}'`
+          );
+        }
+      }
+
+      if (typeof exports !== "object" || exports === null) {
+        throw new RuntimeError("exports must be an object");
+      }
+
+      // Type assertion for exports object
+      const exportsObj = exports as unknown as Record<string, ValueType>;
+      exportsObj[stmt.name.lexeme] = value;
+      return null;
     }
 
-    // Define the class in the outer environment
-    this.environment.assign(stmt.name, klass);
-    return null;
+    throw new Error(
+      `Unknown statement type: ${(stmt as { type: string }).type}`
+    );
   }
 
-  visitExportStmt(stmt: AST.Export): ValueType {
-    const exportsToken = {
-      type: TokenType.IDENTIFIER,
-      lexeme: "exports",
-      literal: null,
-      line: stmt.name.line,
-    };
-    const exports = this.environment.get(exportsToken);
+  // Expression evaluation
+  evaluate(expr: AST.Expr): ValueType {
+    if (AST.isBinaryExpr(expr)) {
+      const left = this.evaluate(expr.left);
+      const right = this.evaluate(expr.right);
 
-    let value;
-    if (stmt.value) {
-      value = this.evaluate(stmt.value);
-    } else {
-      try {
-        value = this.environment.get(stmt.name);
-      } catch {
-        throw new RuntimeError(
-          `Cannot export undefined variable '${stmt.name.lexeme}'`
-        );
+      switch (expr.operator.type) {
+        case TokenType.PLUS:
+          if (typeof left === "number" && typeof right === "number") {
+            return left + right;
+          }
+          if (typeof left === "string" || typeof right === "string") {
+            return String(left as string) + String(right as string);
+          }
+          throw new RuntimeError(
+            "Operands must be numbers or strings.",
+            expr.operator,
+            this.currentSource
+          );
+        case TokenType.MINUS:
+          this.checkNumberOperands(expr.operator, left, right);
+          return (left as number) - (right as number);
+        case TokenType.MULTIPLY:
+          this.checkNumberOperands(expr.operator, left, right);
+          return (left as number) * (right as number);
+        case TokenType.DIVIDE:
+          this.checkNumberOperands(expr.operator, left, right);
+          if (right === 0) {
+            throw new RuntimeError(
+              "Division by zero.",
+              expr.operator,
+              this.currentSource
+            );
+          }
+          return (left as number) / (right as number);
+        case TokenType.MODULO:
+          this.checkNumberOperands(expr.operator, left, right);
+          if (right === 0) {
+            throw new RuntimeError(
+              "Modulo by zero.",
+              expr.operator,
+              this.currentSource
+            );
+          }
+          return (left as number) % (right as number);
+        case TokenType.POWER:
+          this.checkNumberOperands(expr.operator, left, right);
+          return Math.pow(left as number, right as number);
+        case TokenType.GREATER:
+          this.checkNumberOperands(expr.operator, left, right);
+          return (left as number) > (right as number);
+        case TokenType.GREATER_EQUAL:
+          this.checkNumberOperands(expr.operator, left, right);
+          return (left as number) >= (right as number);
+        case TokenType.LESS:
+          this.checkNumberOperands(expr.operator, left, right);
+          return (left as number) < (right as number);
+        case TokenType.LESS_EQUAL:
+          this.checkNumberOperands(expr.operator, left, right);
+          return (left as number) <= (right as number);
+        case TokenType.EQUAL:
+          return this.isEqual(left, right);
+        case TokenType.NOT_EQUAL:
+          return !this.isEqual(left, right);
+        default:
+          throw new RuntimeError(
+            `Unknown operator: ${expr.operator.lexeme}`,
+            expr.operator,
+            this.currentSource
+          );
       }
     }
 
-    if (typeof exports !== "object" || exports === null) {
-      throw new RuntimeError("exports must be an object");
+    if (AST.isGroupingExpr(expr)) {
+      return this.evaluate(expr.expression);
     }
 
-    // Type assertion for exports object
-    const exportsObj = exports as unknown as Record<string, ValueType>;
-    exportsObj[stmt.name.lexeme] = value;
-    return null;
-  }
+    if (AST.isLiteralExpr(expr)) {
+      const value = expr.value;
+      if (value === undefined) {
+        return null;
+      }
+      return value as ValueType;
+    }
 
-  // Expression visitors
+    if (AST.isUnaryExpr(expr)) {
+      const right = this.evaluate(expr.right);
+      switch (expr.operator.type) {
+        case TokenType.MINUS:
+          this.checkNumberOperand(expr.operator, right);
+          return -(right as number);
+        case TokenType.NOT:
+          return !this.isTruthy(right);
+        default:
+          throw new RuntimeError(
+            `Unknown operator: ${expr.operator.lexeme}`,
+            expr.operator,
+            this.currentSource
+          );
+      }
+    }
 
-  visitBinaryExpr(expr: AST.Binary): ValueType {
-    const left = this.evaluate(expr.left);
-    const right = this.evaluate(expr.right);
+    if (AST.isVariableExpr(expr)) {
+      return this.environment.get(expr.name);
+    }
 
-    switch (expr.operator.type) {
-      case TokenType.PLUS:
-        if (typeof left === "number" && typeof right === "number") {
-          return left + right;
-        }
-        if (typeof left === "string" || typeof right === "string") {
-          return String(left as string) + String(right as string);
-        }
+    if (AST.isAssignExpr(expr)) {
+      const value = this.evaluate(expr.value);
+      this.environment.assign(expr.name, value);
+      return value;
+    }
+
+    if (AST.isLogicalExpr(expr)) {
+      const left = this.evaluate(expr.left);
+      if (expr.operator.type === TokenType.OR) {
+        if (this.isTruthy(left)) return left;
+      } else {
+        if (!this.isTruthy(left)) return left;
+      }
+      return this.evaluate(expr.right);
+    }
+
+    if (AST.isCallExpr(expr)) {
+      const callee = this.evaluate(expr.callee);
+
+      if (typeof callee !== "function" && !(callee instanceof ClouFunction)) {
         throw new RuntimeError(
-          "Operands must be numbers or strings.",
-          expr.operator,
+          "Can only call functions and classes.",
+          expr.paren,
           this.currentSource
         );
-      case TokenType.MINUS:
-        this.checkNumberOperands(expr.operator, left, right);
-        return (left as number) - (right as number);
-      case TokenType.MULTIPLY:
-        this.checkNumberOperands(expr.operator, left, right);
-        return (left as number) * (right as number);
-      case TokenType.DIVIDE:
-        this.checkNumberOperands(expr.operator, left, right);
-        if (right === 0) {
-          throw new RuntimeError(
-            "Division by zero.",
-            expr.operator,
-            this.currentSource
-          );
+      }
+
+      // If the callee is a method (accessed through Get), it's already bound
+      if (callee instanceof ClouFunction) {
+        // Create a new environment for the method call
+        const environment = new Environment(callee.closure);
+
+        // If this is a method call (has boundThis), define 'this' in the environment
+        if (callee.boundThis) {
+          environment.define("this", callee.boundThis);
         }
-        return (left as number) / (right as number);
-      case TokenType.MODULO:
-        this.checkNumberOperands(expr.operator, left, right);
-        if (right === 0) {
-          throw new RuntimeError(
-            "Modulo by zero.",
-            expr.operator,
-            this.currentSource
-          );
+
+        // Get the module environment
+        const moduleEnv = callee.closure;
+        if (!this.moduleCallStack.has(moduleEnv)) {
+          this.moduleCallStack.set(moduleEnv, new Set());
         }
-        return (left as number) % (right as number);
-      case TokenType.POWER:
-        this.checkNumberOperands(expr.operator, left, right);
-        return Math.pow(left as number, right as number);
-      case TokenType.GREATER:
-        this.checkNumberOperands(expr.operator, left, right);
-        return (left as number) > (right as number);
-      case TokenType.GREATER_EQUAL:
-        this.checkNumberOperands(expr.operator, left, right);
-        return (left as number) >= (right as number);
-      case TokenType.LESS:
-        this.checkNumberOperands(expr.operator, left, right);
-        return (left as number) < (right as number);
-      case TokenType.LESS_EQUAL:
-        this.checkNumberOperands(expr.operator, left, right);
-        return (left as number) <= (right as number);
-      case TokenType.EQUAL:
-        return this.isEqual(left, right);
-      case TokenType.NOT_EQUAL:
-        return !this.isEqual(left, right);
-    }
+        const callStack = this.moduleCallStack.get(moduleEnv);
 
-    return null;
-  }
+        if (!callStack) {
+          throw new RuntimeError("Module call stack not found.");
+        }
 
-  visitGroupingExpr(expr: AST.Grouping): ValueType {
-    return this.evaluate(expr.expression);
-  }
-
-  visitLiteralExpr(expr: AST.Literal): ValueType {
-    if (Array.isArray(expr.value)) {
-      // Handle template string
-      let result = "";
-      for (const part of expr.value) {
-        if (typeof part === "string") {
-          result += part;
-        } else {
-          // Parse and evaluate the expression
-          const lexer = new Lexer(part.expr);
-          const tokens = lexer.scanTokens();
-          const parser = new Parser(tokens, this.currentSource);
-          const statements = parser.parse();
-          if (
-            statements.length > 0 &&
-            statements[0] instanceof AST.Expression
-          ) {
-            const value = this.evaluate(statements[0].expression);
-            result += value == null ? "" : this.stringify(value);
-          } else {
-            result += "";
+        // Check for circular function calls
+        const functionName = callee.declaration.name;
+        if (functionName) {
+          const functionKey = functionName.lexeme;
+          if (callStack.has(functionKey)) {
+            // Break the cycle by returning a default value
+            return "";
           }
+          callStack.add(functionKey);
+        }
+
+        // Temporarily set the environment for the method call
+        const previous = this.environment;
+        this.environment = environment;
+
+        try {
+          // Evaluate the arguments
+          const args = expr.args.map((arg) => this.evaluate(arg));
+
+          // Call the function
+          const result = callee.call(this, args);
+
+          // Restore the previous environment
+          this.environment = previous;
+
+          // Remove the function from the call stack
+          if (functionName) {
+            callStack.delete(functionName.lexeme);
+          }
+
+          return result;
+        } catch (e) {
+          // Restore the previous environment
+          this.environment = previous;
+
+          // Remove the function from the call stack
+          if (functionName) {
+            callStack.delete(functionName.lexeme);
+          }
+
+          throw e;
         }
       }
-      return result;
-    }
-    return expr.value as ValueType;
-  }
 
-  visitUnaryExpr(expr: AST.Unary): ValueType {
-    const right = this.evaluate(expr.right);
-
-    switch (expr.operator.type) {
-      case TokenType.MINUS:
-        this.checkNumberOperand(expr.operator, right);
-        return -(right as number);
-      case TokenType.NOT:
-        return !this.isTruthy(right);
+      // Native function call
+      const args = expr.args.map((arg) => this.evaluate(arg));
+      return callee(...args);
     }
 
-    return null;
-  }
-
-  visitVariableExpr(expr: AST.Variable): ValueType {
-    return this.environment.get(expr.name);
-  }
-
-  visitAssignExpr(expr: AST.Assign): ValueType {
-    const value = this.evaluate(expr.value);
-    this.environment.assign(expr.name, value);
-    return value;
-  }
-
-  visitLogicalExpr(expr: AST.Logical): ValueType {
-    const left = this.evaluate(expr.left);
-
-    if (expr.operator.type === TokenType.OR) {
-      if (this.isTruthy(left)) return left;
-    } else {
-      if (!this.isTruthy(left)) return left;
-    }
-
-    return this.evaluate(expr.right);
-  }
-
-  visitCallExpr(expr: AST.Call): ValueType {
-    const callee = this.evaluate(expr.callee);
-    const args = expr.args.map((arg) => this.evaluate(arg));
-
-    if (typeof callee !== "function" && !(callee instanceof ClouFunction)) {
+    if (AST.isGetExpr(expr)) {
+      const object = this.evaluate(expr.object);
+      if (object instanceof ClouInstance) {
+        return object.get(expr.name);
+      }
+      if (typeof object === "object" && object !== null) {
+        return (object as Record<string, ValueType>)[expr.name.lexeme];
+      }
       throw new RuntimeError(
-        "Can only call functions and classes.",
-        expr.paren,
+        "Only instances and objects have properties.",
+        expr.name,
         this.currentSource
       );
     }
 
-    // If the callee is a method (accessed through Get), it's already bound
-    if (callee instanceof ClouFunction) {
-      // Create a new environment for the method call
-      const environment = new Environment(callee.closure);
-
-      // If this is a method call (has boundThis), define 'this' in the environment
-      if (callee.boundThis) {
-        environment.define("this", callee.boundThis);
+    if (AST.isSetExpr(expr)) {
+      const object = this.evaluate(expr.object);
+      const value = this.evaluate(expr.value);
+      if (object instanceof ClouInstance) {
+        object.set(expr.name, value);
+        return value;
       }
-
-      // Get the module environment
-      const moduleEnv = callee.closure;
-      if (!this.moduleCallStack.has(moduleEnv)) {
-        this.moduleCallStack.set(moduleEnv, new Set());
+      if (typeof object === "object" && object !== null) {
+        (object as Record<string, ValueType>)[expr.name.lexeme] = value;
+        return value;
       }
-      const callStack = this.moduleCallStack.get(moduleEnv);
-
-      if (!callStack) {
-        throw new RuntimeError("Module call stack not found.");
-      }
-
-      // Check for circular function calls
-      const functionKey = callee.declaration.name?.lexeme ?? "anonymous";
-      if (callStack.has(functionKey)) {
-        // Break the cycle by returning a default value
-        return "";
-      }
-
-      // Temporarily set the environment for the method call
-      const previous = this.environment;
-      this.environment = environment;
-
-      // Add the function to the module's call stack
-      callStack.add(functionKey);
-
-      try {
-        return callee.call(this, args);
-      } finally {
-        // Restore the previous environment and remove from call stack
-        this.environment = previous;
-        callStack.delete(functionKey);
-        if (callStack.size === 0) {
-          this.moduleCallStack.delete(moduleEnv);
-        }
-      }
-    }
-
-    // Native function
-    return callee(...args) as ValueType;
-  }
-
-  visitGetExpr(expr: AST.Get): ValueType {
-    const object = this.evaluate(expr.object);
-
-    if (object instanceof ClouInstance) {
-      return object.get(expr.name);
-    }
-
-    if (typeof object === "object" && object !== null) {
-      const obj = object as unknown as Record<string, ValueType>;
-      const value = obj[expr.name.lexeme];
-      if (value === undefined) {
-        return null;
-      }
-
-      if (value instanceof ClouFunction) {
-        return value.bind(object as unknown as ClouInstance);
-      }
-      return value;
-    }
-
-    // Handle string methods
-    if (typeof object === "string") {
-      switch (expr.name.lexeme) {
-        case "includes":
-          return (searchStr: string) => object.includes(searchStr);
-        case "split":
-          return (separator: string) => object.split(separator);
-        case "slice":
-          return (start: number, end?: number) => object.slice(start, end);
-        case "length":
-          return object.length;
-      }
-    }
-
-    // Handle number methods
-    if (typeof object === "number") {
-      switch (expr.name.lexeme) {
-        case "toFixed":
-          return (digits: number) => object.toFixed(digits);
-      }
-    }
-
-    throw new RuntimeError(
-      "Only instances and objects have properties.",
-      expr.name,
-      this.currentSource
-    );
-  }
-
-  visitSetExpr(expr: AST.Set): ValueType {
-    const object = this.evaluate(expr.object);
-
-    if (
-      !(object instanceof ClouInstance) &&
-      !(typeof object === "object" && object !== null)
-    ) {
       throw new RuntimeError(
         "Only instances and objects have fields.",
         expr.name,
@@ -513,270 +493,164 @@ export class Interpreter implements AST.Visitor<ValueType> {
       );
     }
 
-    const value = this.evaluate(expr.value);
-
-    if (object instanceof ClouInstance) {
-      object.set(expr.name, value);
-    } else {
-      const obj = object as unknown as Record<string, ValueType>;
-      obj[expr.name.lexeme] = value;
+    if (AST.isThisExpr(expr)) {
+      return this.environment.get(expr.keyword);
     }
 
-    return value;
-  }
-
-  visitThisExpr(expr: AST.This): ValueType {
-    return this.environment.get(expr.keyword);
-  }
-
-  visitSuperExpr(expr: AST.Super): ValueType {
-    // First check if we're in a class context by looking for 'this'
-    let instance: ClouInstance;
-    try {
-      instance = this.environment.get({
-        lexeme: "this",
-      } as Token) as ClouInstance;
-    } catch {
-      throw new RuntimeError(
-        "Invalid super call",
-        expr.keyword,
-        this.currentSource
-      );
+    if (AST.isSuperExpr(expr)) {
+      const distance = this.locals.get(expr);
+      const superclass = this.environment.getAt(distance, "super");
+      if (!(superclass instanceof ClouClass)) {
+        throw new RuntimeError(
+          "Superclass must be a class.",
+          expr.keyword,
+          this.currentSource
+        );
+      }
+      const object = this.environment.getAt(distance - 1, "this");
+      if (!(object instanceof ClouInstance)) {
+        throw new RuntimeError(
+          "Can only use 'super' in a method.",
+          expr.keyword,
+          this.currentSource
+        );
+      }
+      const method = superclass.findMethod(expr.method.lexeme);
+      if (!method) {
+        throw new RuntimeError(
+          `Undefined property '${expr.method.lexeme}'.`,
+          expr.method,
+          this.currentSource
+        );
+      }
+      return method.bind(object);
     }
 
-    // Get the class from the instance
-    const klass = instance.klass;
-
-    // Get the superclass from the environment
-    let superclass: ClouClass;
-    try {
-      superclass = this.environment.get({
-        lexeme: "super",
-      } as Token) as ClouClass;
-    } catch {
-      throw new RuntimeError(
-        "Invalid super call",
-        expr.keyword,
-        this.currentSource
-      );
-    }
-
-    // Find the method in the superclass chain
-    const method = superclass.findMethod(expr.method.lexeme);
-    if (!method) {
-      throw new RuntimeError(
-        `Undefined method property '${expr.method.lexeme}' in ${klass.name}.`,
-        expr.method,
-        this.currentSource
-      );
-    }
-
-    return method.bind(instance);
-  }
-
-  visitNewExpr(expr: AST.New): ValueType {
-    const className = expr.className.lexeme;
-    const classValue = this.environment.get({ lexeme: className } as Token);
-
-    if (!(classValue instanceof ClouClass)) {
-      throw new RuntimeError(
-        `${className} is not a class.`,
-        expr.className,
-        this.currentSource
-      );
-    }
-
-    const instance = new ClouInstance(classValue);
-
-    // Call the initializer if it exists
-    const initializer = classValue.findMethod("init");
-    if (initializer) {
-      const boundInitializer = initializer.bind(instance);
+    if (AST.isNewExpr(expr)) {
+      const callee = this.evaluate(expr.className);
+      if (!(callee instanceof ClouClass)) {
+        throw new RuntimeError(
+          "Can only instantiate classes.",
+          expr.className,
+          this.currentSource
+        );
+      }
       const args = expr.args.map((arg) => this.evaluate(arg));
-      boundInitializer.call(this, args);
+      return callee.instantiate(this, args);
     }
 
-    return instance;
-  }
-
-  visitArrayExpr(expr: AST.ArrayExpr): ValueType {
-    const elements = expr.elements.map((element) => this.evaluate(element));
-    elements.toString = function () {
-      return `[${(this as (string | number)[]).join(", ")}]`;
-    };
-
-    return elements;
-  }
-
-  visitObjectExpr(expr: AST.Object): ValueType {
-    const result: Record<string, ValueType> = {};
-
-    for (const [key, valueExpr] of expr.properties.entries()) {
-      result[key] = this.evaluate(valueExpr);
+    if (AST.isArrayExpr(expr)) {
+      return expr.elements.map((element) => this.evaluate(element));
     }
 
-    return result as unknown as ValueType;
-  }
-
-  visitIndexExpr(expr: AST.Index): ValueType {
-    const object = this.evaluate(expr.object);
-    const index = this.evaluate(expr.index);
-
-    if (Array.isArray(object)) {
-      if (
-        typeof index !== "number" ||
-        !Number.isInteger(index) ||
-        index < 0 ||
-        index >= object.length
-      ) {
-        throw new RuntimeError(
-          "Array index out of bounds.",
-          expr.bracket,
-          this.currentSource
-        );
+    if (AST.isObjectExpr(expr)) {
+      const object: Record<string, ValueType> = {};
+      for (const [key, value] of expr.properties) {
+        object[key] = this.evaluate(value);
       }
-      const value = object[index];
-      if (value === undefined) {
-        throw new RuntimeError(
-          "Array index out of bounds.",
-          expr.bracket,
-          this.currentSource
-        );
-      }
-      return value;
+      return object;
     }
 
-    if (typeof object === "string") {
-      if (
-        typeof index !== "number" ||
-        !Number.isInteger(index) ||
-        index < 0 ||
-        index >= object.length
-      ) {
-        throw new RuntimeError(
-          "String index out of bounds.",
-          expr.bracket,
-          this.currentSource
-        );
-      }
-      const char = object[index];
-      if (char === undefined) {
-        throw new RuntimeError(
-          "String index out of bounds.",
-          expr.bracket,
-          this.currentSource
-        );
-      }
-      return char;
-    }
-
-    if (typeof object === "object" && object !== null) {
-      if (
-        object instanceof ClouInstance ||
-        object instanceof ClouClass ||
-        object instanceof ClouFunction
-      ) {
-        throw new RuntimeError(
-          "Cannot index into class, function, or instance directly.",
-          expr.bracket,
-          this.currentSource
-        );
-      }
-      // Type guard for plain objects
-      if (Object.getPrototypeOf(object) === Object.prototype) {
-        const obj = object as Record<string | number, ValueType>;
-        const key =
-          typeof index === "string" || typeof index === "number"
-            ? index
-            : String(index as unknown as string | number);
-        const value = obj[key];
-        if (value === undefined) {
+    if (AST.isIndexExpr(expr)) {
+      const object = this.evaluate(expr.object);
+      const index = this.evaluate(expr.index);
+      if (Array.isArray(object)) {
+        if (typeof index !== "number") {
           throw new RuntimeError(
-            "Object property not found.",
+            "Array index must be a number.",
             expr.bracket,
             this.currentSource
           );
         }
-        return value;
+        if (index < 0 || index >= object.length) {
+          throw new RuntimeError(
+            "Array index out of bounds.",
+            expr.bracket,
+            this.currentSource
+          );
+        }
+        return object[index];
+      }
+      if (typeof object === "object" && object !== null) {
+        if (typeof index !== "string") {
+          throw new RuntimeError(
+            "Object index must be a string.",
+            expr.bracket,
+            this.currentSource
+          );
+        }
+        return (object as Record<string, ValueType>)[index];
       }
       throw new RuntimeError(
-        "Only plain objects are indexable.",
+        "Only arrays and objects can be indexed.",
         expr.bracket,
         this.currentSource
       );
     }
 
+    if (AST.isIndexAssignExpr(expr)) {
+      const object = this.evaluate(expr.object);
+      const index = this.evaluate(expr.index);
+      const value = this.evaluate(expr.value);
+      if (Array.isArray(object)) {
+        if (typeof index !== "number") {
+          throw new RuntimeError(
+            "Array index must be a number.",
+            expr.bracket,
+            this.currentSource
+          );
+        }
+        if (index < 0 || index >= object.length) {
+          throw new RuntimeError(
+            "Array index out of bounds.",
+            expr.bracket,
+            this.currentSource
+          );
+        }
+        object[index] = value;
+        return value;
+      }
+      if (typeof object === "object" && object !== null) {
+        if (typeof index !== "string") {
+          throw new RuntimeError(
+            "Object index must be a string.",
+            expr.bracket,
+            this.currentSource
+          );
+        }
+        (object as Record<string, ValueType>)[index] = value;
+        return value;
+      }
+      throw new RuntimeError(
+        "Only arrays and objects can be indexed.",
+        expr.bracket,
+        this.currentSource
+      );
+    }
+
+    if (AST.isTemplateStringExpr(expr)) {
+      return expr.parts
+        .map((part) => {
+          if (typeof part === "string") {
+            return part;
+          }
+          return this.stringify(this.evaluate(part.expr));
+        })
+        .join("");
+    }
+
+    if (AST.isFunctionExpr(expr)) {
+      return new ClouFunction(expr, this.environment);
+    }
+
     throw new RuntimeError(
-      "Only arrays, strings, and objects are indexable.",
-      expr.bracket,
+      `Unknown expression type: ${(expr as { type: string }).type}`,
+      null,
       this.currentSource
     );
   }
 
-  visitIndexAssignExpr(expr: AST.IndexAssign): ValueType {
-    const object = this.evaluate(expr.object);
-    const index = this.evaluate(expr.index);
-    const value = this.evaluate(expr.value);
-
-    if (Array.isArray(object)) {
-      if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
-        throw new RuntimeError("Array index out of bounds.");
-      }
-      object[index] = value;
-      return value;
-    }
-
-    if (typeof object === "object" && object !== null) {
-      if (
-        object instanceof ClouInstance ||
-        object instanceof ClouClass ||
-        object instanceof ClouFunction
-      ) {
-        throw new RuntimeError(
-          "Cannot assign to class, function, or instance directly."
-        );
-      }
-      // Type guard for plain objects
-      if (Object.getPrototypeOf(object) === Object.prototype) {
-        const obj = object as Record<string | number, ValueType>;
-        const key =
-          typeof index === "string" || typeof index === "number"
-            ? index
-            : String(index as unknown as string | number);
-        obj[key] = value;
-        return value;
-      }
-      throw new RuntimeError(
-        "Only plain objects are indexable for assignment."
-      );
-    }
-
-    throw new RuntimeError(
-      "Only arrays and objects are indexable for assignment."
-    );
-  }
-
-  visitTemplateStringExpr(expr: AST.TemplateString): ValueType {
-    let result = "";
-    for (const part of expr.parts) {
-      if (typeof part === "string") {
-        result += part;
-      } else {
-        // For variable expressions, check if they exist first
-        if (part.expr instanceof AST.Variable) {
-          const name = part.expr.name;
-          if (!this.environment.hasVariable(name)) {
-            result += "";
-            continue;
-          }
-        }
-        const value = this.evaluate(part.expr);
-        result += value == null ? "" : this.stringify(value);
-      }
-    }
-    return result;
-  }
-
+  // Helper methods
   private withEnvironment<T>(newEnv: Environment, fn: () => T): T {
     const previous = this.environment;
     this.environment = newEnv;
@@ -806,8 +680,6 @@ export class Interpreter implements AST.Visitor<ValueType> {
     return String(value);
   };
 
-  // Helper methods
-
   executeBlock(statements: AST.Stmt[], environment: Environment): void {
     const previous = this.environment;
     try {
@@ -819,14 +691,6 @@ export class Interpreter implements AST.Visitor<ValueType> {
     } finally {
       this.environment = previous;
     }
-  }
-
-  execute(stmt: AST.Stmt): ValueType {
-    return stmt.accept(this);
-  }
-
-  evaluate(expr: AST.Expr): ValueType {
-    return expr.accept(this);
   }
 
   isTruthy(value: ValueType): boolean {
