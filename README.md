@@ -1,5 +1,7 @@
 # Clou Programming Language
 
+⚠️ This project is deprecated. If you are interesting in a similar concept, have a look at [GocciaScript](https://github.com/frostney/GocciaScript) ⚠️
+
 Clou is a dynamically-typed scripting language that combines Lua's simplicity with C-style syntax, adding modern features like classes and a module system.
 
 ## Language Features
